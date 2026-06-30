@@ -1,0 +1,9 @@
+{
+  "networks": {
+    "studionet": {
+      "url": "https://studio.genlayer.com/api"
+    }
+  },
+  "default_network": "studionet",
+  "contracts_dir": "../contracts"
+}

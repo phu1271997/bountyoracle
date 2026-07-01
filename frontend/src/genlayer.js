@@ -4,7 +4,7 @@
 // env (VITE_CONTRACT_ADDRESS) — Antigravity will inject the address you get
 // from Studio after deploying.
 
-import { createClient, createAccount } from "genlayer-js";
+import { createClient, createAccount, generatePrivateKey } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
 // Address of the deployed BountyOracle contract.
@@ -19,13 +19,12 @@ export function getAccount() {
   if (!_account) {
     // For a demo you may persist a generated key; in production, connect a
     // real wallet. genlayer-js supports an injected account too.
-    const stored = localStorage.getItem("bo_pk");
-    if (stored) {
-      _account = createAccount(stored);
-    } else {
-      _account = createAccount();
-      localStorage.setItem("bo_pk", _account.privateKey);
+    let stored = localStorage.getItem("bo_pk");
+    if (!stored || stored === "undefined") {
+      stored = generatePrivateKey();
+      localStorage.setItem("bo_pk", stored);
     }
+    _account = createAccount(stored);
   }
   return _account;
 }

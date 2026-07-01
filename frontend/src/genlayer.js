@@ -5,15 +5,12 @@
 // from Studio after deploying.
 
 import { createClient, createAccount } from "genlayer-js";
-import { simulator } from "genlayer-js/chains";
+import { studionet } from "genlayer-js/chains";
 
 // Address of the deployed BountyOracle contract.
 // Set VITE_CONTRACT_ADDRESS in .env (or Vercel env vars) after deploying on
 // https://studio.genlayer.com/run-debug
 export const CONTRACT_ADDRESS = import.meta.env.VITE_CONTRACT_ADDRESS;
-
-// GenLayer Studio public JSON-RPC endpoint (works both locally and on Vercel).
-const STUDIO_RPC = "https://studio.genlayer.com/api";
 
 let _client = null;
 let _account = null;
@@ -36,8 +33,7 @@ export function getAccount() {
 export function getClient() {
   if (!_client) {
     _client = createClient({
-      chain: simulator,
-      endpoint: STUDIO_RPC,
+      chain: studionet,
       account: getAccount(),
     });
   }

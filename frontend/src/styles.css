@@ -37,7 +37,12 @@ code { font-family: "JetBrains Mono", monospace; color: var(--muted); }
   background: var(--accent); box-shadow: 0 0 18px var(--accent);
 }
 .tag { max-width: 620px; color: var(--muted); line-height: 1.55; margin: 14px 0 8px; }
-.you { font-size: 13px; color: var(--muted); }
+.wallet { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; margin-top: 4px; }
+.wallet code { color: var(--ink); }
+.explorer-link { color: var(--open); text-decoration: none; }
+.explorer-link:hover { text-decoration: underline; }
+.hint { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 4px 0 0; }
+.banner.warn { border-color: var(--claimed); color: var(--claimed); }
 
 .create { margin: 22px 0; }
 .form {

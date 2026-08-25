@@ -1,19 +1,23 @@
 # BountyOracle
 
-**Trustless open-source bounties that settle themselves.** A maintainer locks GEN
-against a GitHub issue. A contributor claims it with a pull request. Then an
-**Intelligent Contract on GenLayer reads the live GitHub pages on-chain** (the
-issue, the PR, the diff, the CI checks), **reasons about them with an LLM**, and
-**pays the contributor automatically** if the work genuinely and completely
-solves the issue. No maintainer has to manually adjudicate. No single party
-decides alone.
+**Trustless open-source bounties that settle themselves.** A maintainer locks
+GEN against a GitHub issue. A contributor claims it with a pull request. Then
+an **Intelligent Contract on GenLayer reads the live GitHub pages on-chain**
+(the issue, the PR, the diff, the CI checks), **reasons about them with an
+LLM**, and **pays the contributor automatically** if the work genuinely and
+completely solves the issue. No maintainer has to manually adjudicate. No
+single party decides alone.
+
+- **Live app:** https://bountyoracle.vercel.app
+- **Contract (studionet, Preview):** [`0x1455872eeF0F96b71Fa8a763866B51A6013751c0`](https://explorer-studio.genlayer.com/address/0x1455872eeF0F96b71Fa8a763866B51A6013751c0)
+- **Wallet model:** MetaMask signs. No private key ships in the browser bundle.
 
 > **Why this dies without GenLayer:** the entire product is an on-chain agent
-> that *reads github.com and decides whether work is done well enough to release
-> money*. A normal smart contract (Solidity) cannot fetch a web page or judge
-> code quality. Remove the web-read + LLM judgement and there is nothing left —
-> no oracle, nothing can settle. The AI is the settlement mechanism, not a
-> garnish.
+> that *reads github.com and decides whether work is done well enough to
+> release money*. A normal smart contract (Solidity) cannot fetch a web page
+> or judge code quality. Remove the web-read + LLM judgement and there is
+> nothing left — no oracle, nothing can settle. The AI is the settlement
+> mechanism, not a garnish.
 
 ---
 
@@ -41,25 +45,51 @@ maintainer                contributor                 anyone
 
 ### The part that matters: consensus checks *meaning*, not shape
 
-The hard line between a real GenLayer app and a toy is here. Our validator does
-**not** merely check "is this valid JSON with the right keys." Each validator
-**independently re-reads GitHub and re-judges**, then the run only succeeds if
-the validator reaches the **same decision** (`ACCEPT` / `REJECT` /
-`UNRESOLVABLE`) as the leader. Two validators returning different verdicts that
-both happen to be well-formed JSON would be a failure — we forbid that
-explicitly in `validator_fn`.
+Our validator does **not** merely check "is this valid JSON with the right
+keys." Each validator **independently re-reads GitHub and re-judges**, then
+the run only succeeds if the validator reaches the **same decision**
+(`ACCEPT` / `REJECT` / `UNRESOLVABLE`) as the leader. Two validators
+returning different verdicts that both happen to be well-formed JSON would be
+a failure — we explicitly forbid that in `validator_fn`.
+
+### `gl.vm.run_nondet_unsafe` — deliberate fallback
+
+`resolve()` wraps its leader + validator in
+`gl.vm.run_nondet_unsafe(leader_fn, validator_fn)`. The safer
+`gl.vm.run_nondet` is preferred by the SDK docs, but on the current Studio
+build we target, only `run_nondet_unsafe` is exposed by the runtime. The
+validator is written defensively — it returns `False` on any exception path
+so a crashed validator is equivalent to a Disagree. When the newer API lands
+in the Studio build we deploy against, this call becomes a one-line swap.
 
 ### Edge cases (each has an explicit branch)
 
 | Case | Behaviour |
 |---|---|
 | Issue or PR page dead / unreachable | verdict `UNRESOLVABLE`, no payout, maintainer may refund |
-| LLM returns malformed JSON | coerced → `UNRESOLVABLE` |
+| LLM returns malformed JSON | coerced to `UNRESOLVABLE` |
 | PR incomplete / wrong / no tests / CI failing | `REJECT`, bounty returns to `OPEN` for another contributor |
 | Funding with 0 value | rejected at `create_bounty` |
 | Non-GitHub or non-`/pull/` URL | rejected |
 | Double payout | blocked by per-bounty `paid` flag |
 | Resolve before a claim exists | rejected (state machine guard) |
+| Consensus produces no usable verdict | bounty marked `UNRESOLVABLE` and rationale explains why |
+
+---
+
+## Live on-chain state (as seeded for the Explorer submission)
+
+Three bounties currently live on the contract, one for each terminal state:
+
+| # | Title | Final state | Verdict |
+|---|---|---|---|
+| 3 | Add MIT LICENSE file to the repo | `ACCEPTED` (paid out) | `ACCEPT` (100% conf.) |
+| 4 | Add a CHANGELOG.md documenting version history | `OPEN` (returned after reject) | `REJECT` (100% conf.) |
+| 5 | Investigate 404 handling in dead-repo edge case | `UNRESOLVABLE` | `UNRESOLVABLE` (page unreachable) |
+
+Each is a real GitHub issue on this repo, paired with a real PR that either
+resolves it, doesn't, or points at a nonexistent repo. The AI verdicts + full
+rationales are visible in the live app.
 
 ---
 
@@ -71,36 +101,32 @@ bountyoracle/
 │   ├── BountyOracle.py     # the Intelligent Contract (heart of the project)
 │   └── storage_test.py     # minimal sanity contract — deploy FIRST
 ├── frontend/               # genlayer-js + React (Vite) app
-│   ├── src/genlayer.js     # contract client wrapper
+│   ├── src/genlayer.js     # MetaMask-signing contract client
 │   ├── src/App.jsx         # full user flow UI
+│   ├── public/logo.svg     # brand mark (source)
 │   └── ...
 ├── tests/                  # gltest suite (happy path + edge cases, with mocks)
-├── scripts/deploy.js       # scriptable testnet deploy
+├── scripts/deploy.js       # scriptable studionet deploy
 └── README.md
 ```
 
 ---
 
-## 1. Deploy the contract on GenLayer Studio (recommended)
+## 1. Deploy the contract on GenLayer Studio
 
-1. Open **https://studio.genlayer.com/run-debug**
-2. **Settings → Reset Storage → Confirm**, then **hard refresh** (Cmd+Shift+R / Ctrl+Shift+F5).
-3. Deploy **`contracts/storage_test.py` FIRST** to confirm the environment works.
-   - Click the deploy tx in the sidebar and verify **`Result: SUCCESS`** (not just `Status: FINALIZED`).
-4. If storage_test succeeds, deploy **`contracts/BountyOracle.py`**.
-   - The constructor takes **no arguments**.
-   - After deploy, click the tx → verify **`Result: SUCCESS`**.
-5. **Copy the contract address.** You'll paste it into the frontend env.
-
-> If you see `Contract Queues not found`, line 1 of the file is not exactly
-> `# v0.2.16`. If you see `TreeMap <- TreeMap`, a TreeMap was reassigned in
-> `__init__`. Neither should happen here — both files already follow the rules.
+1. Open **https://studio.genlayer.com/run-debug**.
+2. **Settings → Reset Storage → Confirm**, then hard refresh
+   (Cmd+Shift+R / Ctrl+Shift+F5).
+3. Deploy **`contracts/storage_test.py` FIRST** to confirm the environment
+   works. Click the deploy tx and verify `Result: SUCCESS`.
+4. If storage_test succeeds, deploy **`contracts/BountyOracle.py`**. The
+   constructor takes no arguments. Verify `Result: SUCCESS`.
+5. Copy the contract address — you'll paste it into Vercel.
 
 ### (Alternative) Scripted deploy
 
 ```bash
-cd bountyoracle
-npm i -g genlayer-js   # or use a local install
+npm i -g genlayer-js
 GENLAYER_PRIVATE_KEY=0xYOURKEY node scripts/deploy.js
 # prints the contract address + the exact VITE_CONTRACT_ADDRESS line
 ```
@@ -117,10 +143,17 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-Full flow in the UI: **post a bounty (locks GEN) → claim it with a PR URL →
-Run AI judgement → watch the on-chain verdict + rationale appear → contributor
-is paid automatically on ACCEPT.** A loading state is shown while validators
-reach consensus.
+### Wallet setup for the demo
+
+1. Install **MetaMask** in the browser.
+2. On the live app, click **Connect MetaMask** — the site adds and switches
+   to the GenLayer Studio Network automatically (chain id `61999` / `0xF1EF`,
+   RPC `https://studio.genlayer.com/api`).
+3. Fund your MetaMask address on studionet by transferring GEN from the
+   Studio **Accounts** panel — this is the studionet-native funding source.
+   (Do **not** use the testnet faucet — testnet and studionet are separate
+   networks.)
+4. You can now post bounties, claim with a PR, and trigger AI judgement.
 
 ### Deploy the frontend to Vercel
 
@@ -133,19 +166,17 @@ reach consensus.
 
 ## 3. Run the tests
 
-The tests use `gltest`. Because `resolve()` is non-deterministic (it reads the
-web + calls an LLM), the suite **installs mocks first** via `sim_installMocks`
-so consensus can finalize without real internet / API keys.
-
 ```bash
 cd tests
 pip install -r requirements.txt
 pytest -v
 ```
 
-Covered: happy-path ACCEPT + payout + reputation bump, REJECT→OPEN, dead-URL
-→UNRESOLVABLE→refund, zero-value rejection, bad-URL rejection, resolve-state
-guard.
+The suite installs LLM + web mocks via `sim_installMocks` **before** any
+nondet tx, so the tests finalise without needing real internet or an OpenAI
+key. Covered: happy-path ACCEPT + payout + reputation bump, REJECT→OPEN,
+dead-URL→UNRESOLVABLE→refund, zero-value rejection, bad-URL rejection,
+resolve-state guard.
 
 ---
 
@@ -168,21 +199,25 @@ guard.
 
 - Every contract starts with `# v0.2.16` + the `Depends` comment, imports via
   `from genlayer import *` only.
-- Custom storage structs use `@allow_storage @dataclass` (there is no `Record`).
+- Custom storage structs use `@allow_storage @dataclass` (there is no
+  `Record`).
 - `TreeMap` keys are `str` — calldata only supports string-keyed maps, so
   bounties are keyed by `str(bounty_id)`.
-- All persisted integers are `bigint` (not `u256`/`int`) — required by the
-  simulator's storage metadata validator.
+- All persisted integers are `bigint` (not `u256` / bare `int`) — required by
+  the simulator's storage metadata validator.
 - Native GEN payouts use `gl.get_contract_at(addr).emit_transfer(value=...)`.
-- No `float`, no `dict`/`list` storage, class named `Contract`, `TreeMap`/
+- No `float`, no `dict` / `list` storage, class named `Contract`, `TreeMap` /
   `DynArray` never reassigned in `__init__`.
-- All `gl.nondet.*` calls live inside `gl.vm.run_nondet_unsafe(leader, validator)`.
+- All `gl.nondet.*` calls live inside
+  `gl.vm.run_nondet_unsafe(leader, validator)` (see fallback note above).
+- Frontend uses MetaMask (address-string account) — no private key in
+  `VITE_*` env vars; SDK auto-adds/switches to the studionet chain.
 
 ---
 
 ## Pitch
 
-**BountyOracle dies without GenLayer:** without an on-chain contract that reads
-live GitHub and reasons about code quality with an LLM, there is no trustless
-judge — bounties would still need a human to decide who gets paid, which is the
-exact problem we remove.
+**BountyOracle dies without GenLayer:** without an on-chain contract that
+reads live GitHub and reasons about code quality with an LLM, there is no
+trustless judge — bounties would still need a human to decide who gets paid,
+which is the exact problem we remove.

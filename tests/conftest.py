@@ -1,27 +1,64 @@
 """
-conftest.py — shared gltest fixtures for BountyOracle.
+conftest.py — shared gltest fixtures + pytest markers for BountyOracle.
 
-The most important thing here is install_mocks(): nondet transactions
-(run_nondet_unsafe -> web.render / exec_prompt) will FAIL CONSENSUS in a test
-environment without real internet / OPENAI_API_KEY. When they fail, the symptom
-is a confusing *state* error (e.g. "bounty is not awaiting judgement") because
-the tx never finalized and state never advanced.
+Two lanes:
+  * fast  — tests marked (implicitly) without `slow`. Do not touch the
+    network; safe to run without any funded account.
+  * slow  — tests marked `@pytest.mark.slow`. Deploy a fresh contract and
+    run non-deterministic transactions. Require a funded account on the
+    target network.
 
-So we install mocks BEFORE running any nondet tx (R17).
-
-CRITICAL (R17): the params passed to sim_installMocks MUST be a bare dict, NOT
-wrapped in an outer list. A list gets normalized to an int-indexed dict and 0
-mocks get registered.
+install_mocks() is the R17-compliant mock installer for the local
+simulator. `params` must be a bare dict — a list would be normalized to
+an int-indexed dict and register 0 mocks.
 """
 import json
 import pytest
 
-from gltest import get_contract_factory, default_account, accounts  # noqa: F401
+from gltest import get_contract_factory, get_default_account, get_accounts  # noqa: F401
 
 
-def install_mocks(client, *, verdict="ACCEPT", confidence=92, rationale="Mock: PR resolves the issue and CI is green.",
-                  issue_body="Mock issue: please fix the off-by-one bug in parser.",
-                  pr_body="Mock PR: fixes off-by-one, adds regression test. CI green."):
+@pytest.fixture
+def accounts():
+    """Backwards-compat: expose gltest's account list as a fixture."""
+    return get_accounts()
+
+
+@pytest.fixture
+def default_account():
+    return get_default_account()
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "slow: deploys a contract + runs non-deterministic transactions "
+        "against a live network. Skipped unless -m slow is given.",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip @pytest.mark.slow tests unless -m slow (or -m 'slow or …') is set."""
+    marker_expr = config.getoption("-m") or ""
+    if "slow" in marker_expr:
+        return
+    skip_slow = pytest.mark.skip(
+        reason="marked slow; opt in with `pytest -m slow` "
+        "(needs a funded account on the target network)."
+    )
+    for item in items:
+        if "slow" in item.keywords:
+            item.add_marker(skip_slow)
+
+
+def install_mocks(
+    client, *,
+    verdict="ACCEPT",
+    confidence=92,
+    rationale="Mock: PR resolves the issue and CI is green.",
+    issue_body="Mock issue: please fix the off-by-one bug in parser.",
+    pr_body="Mock PR: fixes off-by-one, adds regression test. CI green.",
+):
     """Register LLM + web mocks. Call this before any resolve() tx."""
     llm_response = json.dumps({
         "verdict": verdict,
@@ -30,7 +67,7 @@ def install_mocks(client, *, verdict="ACCEPT", confidence=92, rationale="Mock: P
     })
     client.provider.make_request(
         method="sim_installMocks",
-        params={                       # ← bare dict, NOT [ {...} ]  (R17)
+        params={
             "llm_mocks": {
                 ".*": llm_response,
             },
@@ -57,3 +94,8 @@ def install_dead_url_mocks(client):
 @pytest.fixture
 def bounty_factory():
     return get_contract_factory("BountyOracle")
+
+
+@pytest.fixture
+def storage_test_factory():
+    return get_contract_factory("storage_test")

@@ -8,6 +8,7 @@ All write calls use the fluent client API (R16):
 Read-only views use .call().
 """
 import json
+import pytest
 
 from conftest import install_mocks
 
@@ -18,6 +19,7 @@ def _deploy(bounty_factory, deployer):
     return contract
 
 
+@pytest.mark.slow
 def test_happy_path_accept_and_payout(bounty_factory, accounts):
     maintainer = accounts[0]
     contributor = accounts[1]

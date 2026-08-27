@@ -1,0 +1,20 @@
+# gltest.config.yaml — BountyOracle test suite configuration.
+#
+# The suite is split into two lanes:
+#   fast  → default. Static contract-shape assertions, no network needed.
+#           Run with `pytest -v`.
+#   slow  → deploy + run non-deterministic transactions against a live network.
+#           Run with `pytest -m slow --network studionet` (needs GEN).
+
+networks:
+  default: localnet
+  localnet:
+    default_wait_interval: 3000
+    default_wait_retries: 30
+  studionet:
+    default_wait_interval: 5000
+    default_wait_retries: 60
+
+paths:
+  contracts: ../contracts
+  artifacts: ./.artifacts

@@ -24,6 +24,7 @@ def _client(contract):
     return contract.provider if hasattr(contract, "provider") else contract.client
 
 
+@pytest.mark.slow
 def test_reject_returns_to_open(bounty_factory, accounts):
     maintainer, contributor = accounts[0], accounts[1]
     contract = _deploy(bounty_factory, maintainer)
@@ -46,6 +47,7 @@ def test_reject_returns_to_open(bounty_factory, accounts):
     assert b["contributor"].endswith("0000000000000000000000000000000000000000")
 
 
+@pytest.mark.slow
 def test_dead_url_unresolvable_then_refund(bounty_factory, accounts):
     maintainer, contributor = accounts[0], accounts[1]
     contract = _deploy(bounty_factory, maintainer)
@@ -72,6 +74,7 @@ def test_dead_url_unresolvable_then_refund(bounty_factory, accounts):
     assert b["paid"] is True
 
 
+@pytest.mark.slow
 def test_zero_value_funding_rejected(bounty_factory, accounts):
     maintainer = accounts[0]
     contract = _deploy(bounty_factory, maintainer)
@@ -81,6 +84,7 @@ def test_zero_value_funding_rejected(bounty_factory, accounts):
         ).transact(value=0)
 
 
+@pytest.mark.slow
 def test_bad_urls_rejected(bounty_factory, accounts):
     maintainer, contributor = accounts[0], accounts[1]
     contract = _deploy(bounty_factory, maintainer)
@@ -101,6 +105,7 @@ def test_bad_urls_rejected(bounty_factory, accounts):
         ).transact(value=0)
 
 
+@pytest.mark.slow
 def test_resolve_requires_claimed(bounty_factory, accounts):
     maintainer = accounts[0]
     contract = _deploy(bounty_factory, maintainer)

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="loop" x1="0.05" y1="0.5" x2="0.95" y2="0.5">
+      <stop offset="0"    stop-color="#2540d8"/>
+      <stop offset="0.35" stop-color="#2a5cf0"/>
+      <stop offset="0.65" stop-color="#2c9df6"/>
+      <stop offset="1"    stop-color="#28d0ff"/>
+    </linearGradient>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="26"
+                    flood-color="#2540d8" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- Infinity drawn as a single stroked path so the interior is hollow
+       and background can be transparent. Two lobes meet at the centre
+       (512,512) with a slight overlap giving a "twist" read. -->
+  <g filter="url(#softShadow)">
+    <path
+      d="M 512 512
+         C 512 340, 380 260, 275 260
+         C 150 260,  90 380,  90 512
+         C  90 644, 150 764, 275 764
+         C 380 764, 512 684, 512 512
+         C 512 340, 644 260, 749 260
+         C 874 260, 934 380, 934 512
+         C 934 644, 874 764, 749 764
+         C 644 764, 512 684, 512 512 Z"
+      fill="none"
+      stroke="url(#loop)"
+      stroke-width="118"
+      stroke-linecap="round"
+      stroke-linejoin="round"/>
+  </g>
+</svg>

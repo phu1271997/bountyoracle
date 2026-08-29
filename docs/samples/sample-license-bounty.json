@@ -1,0 +1,19 @@
+{
+  "$schema": "./sample-bounty.schema.json",
+  "label": "Sample A · aim ACCEPT",
+  "why": "A merged PR that adds the exact file the issue asked for. Uncontroversial — expect the AI verdict to be ACCEPT with high confidence.",
+  "createBountyArgs": {
+    "issue_url": "https://github.com/phu1271997/bountyoracle/issues/1",
+    "repo_full_name": "phu1271997/bountyoracle",
+    "title": "Add MIT LICENSE file to the repo",
+    "min_confidence": 60,
+    "value_gen": 5
+  },
+  "claimBountyArgs": {
+    "pr_url": "https://github.com/phu1271997/bountyoracle/pull/3"
+  },
+  "expectedVerdict": {
+    "verdict": "ACCEPT",
+    "confidenceGE": 70
+  }
+}

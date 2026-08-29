@@ -1,0 +1,19 @@
+{
+  "$schema": "./sample-bounty.schema.json",
+  "label": "Sample B · aim REJECT",
+  "why": "The claim points at a real PR that explicitly does not address the issue (only a comment tweak in an unrelated file). The AI should reject on the correctness axis, and the bounty should cycle back to OPEN.",
+  "createBountyArgs": {
+    "issue_url": "https://github.com/phu1271997/bountyoracle/issues/2",
+    "repo_full_name": "phu1271997/bountyoracle",
+    "title": "Add a CHANGELOG.md documenting version history",
+    "min_confidence": 70,
+    "value_gen": 3
+  },
+  "claimBountyArgs": {
+    "pr_url": "https://github.com/phu1271997/bountyoracle/pull/4"
+  },
+  "expectedVerdict": {
+    "verdict": "REJECT",
+    "confidenceGE": 70
+  }
+}

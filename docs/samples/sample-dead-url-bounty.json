@@ -1,0 +1,19 @@
+{
+  "$schema": "./sample-bounty.schema.json",
+  "label": "Sample C · aim UNRESOLVABLE → maintainer refund",
+  "why": "Both the issue URL and the PR URL are on a nonexistent GitHub repo. gl.nondet.web.render returns None, the leader coerces the verdict to UNRESOLVABLE, and the maintainer path is a refund.",
+  "createBountyArgs": {
+    "issue_url": "https://github.com/phu1271997-nonexistent/void-repo/issues/999",
+    "repo_full_name": "phu1271997-nonexistent/void-repo",
+    "title": "Investigate 404 handling in dead-repo edge case",
+    "min_confidence": 60,
+    "value_gen": 1
+  },
+  "claimBountyArgs": {
+    "pr_url": "https://github.com/phu1271997-nonexistent/void-repo/pull/999"
+  },
+  "expectedVerdict": {
+    "verdict": "UNRESOLVABLE",
+    "then": "maintainer calls refund(); status becomes REFUNDED"
+  }
+}

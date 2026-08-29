@@ -2,6 +2,10 @@ import React, { useState } from "react";
 import {
   createBounty, claimBounty, resolveBounty, refundBounty,
 } from "../genlayer.js";
+import {
+  validateIssueUrl, validatePrUrl, validateRepoFullName, validateMinConfidence,
+} from "../lib/validate.js";
+import { addressEquals, isZeroAddr, shortAddr } from "../lib/addr.js";
 
 const STATUS_META = {
   OPEN:         { rail: "var(--open)",      label: "Open",              tone: "open" },
@@ -14,10 +18,8 @@ const STATUS_META = {
 
 const FILTERS = ["ALL", "OPEN", "CLAIMED", "ACCEPTED", "REJECTED", "UNRESOLVABLE", "REFUNDED"];
 
-function short(addr) {
-  if (!addr) return "—";
-  return addr.slice(0, 6) + "…" + addr.slice(-4);
-}
+const short = shortAddr;
+
 function fmtGEN(base) {
   try {
     const b = BigInt(base);
@@ -117,9 +119,24 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
   const [form, setForm] = useState({
     issueUrl: "", repoFullName: "", title: "", minConfidence: 70, value: 1,
   });
+  const [localError, setLocalError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
   async function submit() {
-    setError("");
+    setError(""); setLocalError("");
+    // Client-side allowlist checks — lib/validate.js. Fail fast before
+    // spending gas on a tx the contract would reject anyway.
+    const checks = [
+      ["Issue URL", validateIssueUrl(form.issueUrl)],
+      ["Repo",      validateRepoFullName(form.repoFullName)],
+      ["Confidence", validateMinConfidence(form.minConfidence)],
+    ];
+    for (const [label, res] of checks) {
+      if (!res.ok) { setLocalError(`${label}: ${res.reason}`); return; }
+    }
+    if (!(Number(form.value) > 0)) {
+      setLocalError("Bounty amount must be greater than 0."); return;
+    }
     setBusy({ id: "new", action: "create" });
     try {
       const base = BigInt(Math.floor(Number(form.value) * 1e6)) * (10n ** 12n);
@@ -155,6 +172,7 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
           <input type="number" min="0.000001" step="0.1" value={form.value} onChange={set("value")} />
         </label>
       </div>
+      {localError && <div className="banner error">{localError}</div>}
       <button className="btn-primary" disabled={busy} onClick={submit}>
         {busy?.action === "create" ? "Signing + funding…" : "Fund bounty"}
       </button>
@@ -170,7 +188,9 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
 function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
   const meta = STATUS_META[b.status] || STATUS_META.OPEN;
   const [prUrl, setPrUrl] = useState("");
-  const isMaintainer = me && b.maintainer?.toLowerCase() === me.toLowerCase();
+  const [claimError, setClaimError] = useState("");
+  const isMaintainer = addressEquals(me, b.maintainer);
+  const hasContributor = !isZeroAddr(b.contributor);
   const judging = busy?.id === b.bounty_id && busy?.action === "resolve";
 
   async function run(action, fn) {
@@ -179,6 +199,13 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
     try { await fn(); onChanged(); }
     catch (e) { setError(`${action} failed: ` + (e?.message || e)); }
     finally { setBusy(null); }
+  }
+
+  function submitClaim() {
+    setClaimError("");
+    const check = validatePrUrl(prUrl.trim());
+    if (!check.ok) { setClaimError(check.reason); return; }
+    return run("claim", () => claimBounty({ id: b.bounty_id, prUrl: prUrl.trim() }));
   }
 
   return (
@@ -194,7 +221,7 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
           <a href={b.issue_url} target="_blank" rel="noreferrer">{b.repo_full_name} · issue ↗</a>
           {b.pr_url && <a href={b.pr_url} target="_blank" rel="noreferrer">PR ↗</a>}
           <span>maintainer {short(b.maintainer)}</span>
-          {b.contributor && !b.contributor.endsWith("0000") && (
+          {hasContributor && (
             <span>contributor {short(b.contributor)}</span>
           )}
           <span>min conf {b.min_confidence}%</span>
@@ -214,19 +241,26 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
         <div className="actions">
           {b.status === "OPEN" && (
             me ? (
-              <div className="claim">
-                <input
-                  placeholder="https://github.com/owner/repo/pull/57"
-                  value={prUrl}
-                  onChange={(e) => setPrUrl(e.target.value)}
-                />
-                <button
-                  className="btn-primary"
-                  disabled={busy || !prUrl}
-                  onClick={() => run("claim", () => claimBounty({ id: b.bounty_id, prUrl: prUrl.trim() }))}
-                >
-                  {busy?.id === b.bounty_id && busy?.action === "claim" ? "Claiming…" : "Claim with PR"}
-                </button>
+              <div style={{ display: "grid", gap: 8, flex: 1, minWidth: 260 }}>
+                <div className="claim">
+                  <input
+                    placeholder="https://github.com/owner/repo/pull/57"
+                    value={prUrl}
+                    onChange={(e) => { setPrUrl(e.target.value); setClaimError(""); }}
+                  />
+                  <button
+                    className="btn-primary"
+                    disabled={busy || !prUrl}
+                    onClick={submitClaim}
+                  >
+                    {busy?.id === b.bounty_id && busy?.action === "claim" ? "Claiming…" : "Claim with PR"}
+                  </button>
+                </div>
+                {claimError && (
+                  <div className="banner error" style={{ margin: 0, padding: "10px 14px" }}>
+                    {claimError}
+                  </div>
+                )}
               </div>
             ) : (
               <button className="btn-ghost" onClick={onConnect}>Connect wallet to claim</button>

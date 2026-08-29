@@ -26,6 +26,13 @@ import Compare from "./sections/Compare.jsx";
 import FAQ from "./sections/FAQ.jsx";
 import HowToUse from "./sections/HowToUse.jsx";
 import Footer from "./sections/Footer.jsx";
+import ErrorBoundary from "./sections/ErrorBoundary.jsx";
+
+// Wrap a section so a crash inside it does not unmount the rest of the
+// page (SECURITY.md § T5).
+const guard = (label, node) => (
+  <ErrorBoundary label={label}>{node}</ErrorBoundary>
+);
 
 export default function App() {
   const [bounties, setBounties] = useState([]);
@@ -88,26 +95,28 @@ export default function App() {
           </div>
         </div>
       )}
-      <Problem />
-      <HowItWorks />
-      <LiveVerdicts
-        bounties={bounties}
-        loading={loading}
-        refresh={refresh}
-        me={me}
-        onConnect={handleConnect}
-        busy={busy}
-        setBusy={setBusy}
-        error={error}
-        setError={setError}
-      />
-      <Signals />
-      <Architecture />
-      <UseCases />
-      <Compare />
-      <FAQ />
-      <HowToUse />
-      <Footer />
+      {guard("Problem section", <Problem />)}
+      {guard("How-it-works section", <HowItWorks />)}
+      {guard("Live verdicts", (
+        <LiveVerdicts
+          bounties={bounties}
+          loading={loading}
+          refresh={refresh}
+          me={me}
+          onConnect={handleConnect}
+          busy={busy}
+          setBusy={setBusy}
+          error={error}
+          setError={setError}
+        />
+      ))}
+      {guard("Signals section", <Signals />)}
+      {guard("Architecture section", <Architecture />)}
+      {guard("Use cases section", <UseCases />)}
+      {guard("Compare section", <Compare />)}
+      {guard("FAQ section", <FAQ />)}
+      {guard("How to use section", <HowToUse />)}
+      {guard("Footer", <Footer />)}
     </>
   );
 }

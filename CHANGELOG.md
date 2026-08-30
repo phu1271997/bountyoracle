@@ -4,7 +4,56 @@ All notable changes to BountyOracle land here. The project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Unreleased work targets `v0.4.0` (Phase 3 — Integrations).
+Unreleased work targets `v0.5.0` (Phase 4 — Real Traction).
+
+---
+
+## [0.4.0] — 2026-08-30 · Phase 3 — Integrations
+
+**Milestone type:** integrations (Loại 4).
+**Deploy state:** frontend redeployed; **contract unchanged** from v0.3
+(`0xE86573cbFf9c1cF08A175D616a183BFf8eba7aC6`).
+
+### Added
+- **GitHub REST API enrichment** — `frontend/src/lib/github.js`.
+  Parses the URL, hits `api.github.com` unauthenticated (60 req/hr
+  is enough for one browser session), caches responses for 5 minutes
+  in-memory, de-dupes concurrent requests.
+  - The create form pre-fetches the issue title + state so the user
+    sees "GitHub: <title> — issue open" (or "issue closed") before
+    they spend gas. A closed issue blocks submission.
+  - Every bounty card that has a `pr_url` shows a colored badge for
+    the PR's real state — `merged` / `draft` / `open PR` /
+    `closed (unmerged)`. Claiming a closed-unmerged PR is refused.
+- **ENS reverse resolution** — `frontend/src/lib/ens.js`. Calls the
+  free public `api.ensdata.net/<addr>` endpoint (no key, CORS OK).
+  Session-cached and de-duped. When a maintainer or contributor
+  address has a primary ENS name, the card chip shows
+  `name.eth · 0xAB…cd`.
+- **Deep links + Web Share** — `frontend/src/lib/share.js`. Every
+  bounty has a canonical URL `?bounty=<id>` that scrolls to and
+  outlines that card on load. Each card exposes a Share button that
+  uses `navigator.share` when available (mobile + some desktop)
+  and falls back to writing the deep link onto the clipboard.
+- **`tests/test_integrations.py`** — 13 new fast-lane invariants
+  covering the three integration modules and their wire-up.
+
+### Changed
+- `LiveVerdicts.jsx` — CreateForm gains a live GitHub hint banner,
+  BountyCard renders the PR badge and ENS chips, and each card is
+  a scroll target for the deep-link reader.
+
+### Security
+- All three integrations are strictly read-only, key-less, and
+  publicly reachable. Test-time assertion that neither
+  `Authorization`, `Bearer`, `GITHUB_TOKEN`, nor `API_KEY` appears
+  in any of the three lib files.
+
+### Notes for reviewers
+- Rate limit on `api.github.com` unauthenticated is 60 req/hr per
+  source IP. On low-traffic sessions this is invisible; hitting the
+  limit surfaces as a `warn` banner in the create form and a
+  missing PR badge on cards. No functionality breaks.
 
 ---
 

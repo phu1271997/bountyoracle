@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   createBounty, claimBounty, resolveBounty, refundBounty,
 } from "../genlayer.js";
@@ -6,6 +6,11 @@ import {
   validateIssueUrl, validatePrUrl, validateRepoFullName, validateMinConfidence,
 } from "../lib/validate.js";
 import { addressEquals, isZeroAddr, shortAddr } from "../lib/addr.js";
+import {
+  fetchIssueMeta, fetchPrMeta, prStateBadge, issueStateBadge,
+} from "../lib/github.js";
+import { resolveEns, formatWithEns } from "../lib/ens.js";
+import { shareBounty, bountyDeepLink, readDeepLinkId } from "../lib/share.js";
 
 const STATUS_META = {
   OPEN:         { rail: "var(--open)",      label: "Open",              tone: "open" },
@@ -36,6 +41,16 @@ export default function LiveVerdicts({
 }) {
   const [filter, setFilter] = useState("ALL");
   const [showForm, setShowForm] = useState(false);
+  // Phase 3: deep link — read ?bounty=N once, on mount.
+  const [highlightId] = useState(() => readDeepLinkId());
+  // Also warm the ENS cache for maintainers/contributors before their
+  // cards render, so the chips fill in on the first paint after data.
+  useEffect(() => {
+    for (const b of bounties) {
+      resolveEns(b.maintainer);
+      if (b.contributor && !isZeroAddr(b.contributor)) resolveEns(b.contributor);
+    }
+  }, [bounties]);
 
   const counts = FILTERS.reduce((acc, f) => {
     acc[f] = f === "ALL" ? bounties.length : bounties.filter((b) => b.status === f).length;
@@ -107,6 +122,7 @@ export default function LiveVerdicts({
               setError={setError}
               onChanged={refresh}
               onConnect={onConnect}
+              highlighted={highlightId === b.bounty_id}
             />
           ))
         )}
@@ -120,12 +136,37 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
     issueUrl: "", repoFullName: "", title: "", minConfidence: 70, value: 1,
   });
   const [localError, setLocalError] = useState("");
+  const [issueHint, setIssueHint] = useState(null); // { ok, title|reason, state? }
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  // Phase 3 integration: GitHub metadata enrichment. When the issue URL
+  // parses cleanly, fetch title + state so the user sees what they are
+  // about to bounty AND we can auto-fill the repo/title fields.
+  useEffect(() => {
+    const url = form.issueUrl.trim();
+    if (!url) { setIssueHint(null); return; }
+    if (!validateIssueUrl(url).ok) { setIssueHint(null); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const r = await fetchIssueMeta(url);
+      if (cancelled) return;
+      setIssueHint(r);
+      if (r.ok) {
+        setForm((f) => ({
+          ...f,
+          title: f.title || r.data.title,
+          repoFullName: f.repoFullName || (() => {
+            const m = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\//);
+            return m ? `${m[1]}/${m[2]}` : "";
+          })(),
+        }));
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [form.issueUrl]);
 
   async function submit() {
     setError(""); setLocalError("");
-    // Client-side allowlist checks — lib/validate.js. Fail fast before
-    // spending gas on a tx the contract would reject anyway.
     const checks = [
       ["Issue URL", validateIssueUrl(form.issueUrl)],
       ["Repo",      validateRepoFullName(form.repoFullName)],
@@ -136,6 +177,10 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
     }
     if (!(Number(form.value) > 0)) {
       setLocalError("Bounty amount must be greater than 0."); return;
+    }
+    if (issueHint?.ok && issueHint.data.state === "closed") {
+      setLocalError("GitHub says this issue is already closed. Post a bounty on an OPEN issue.");
+      return;
     }
     setBusy({ id: "new", action: "create" });
     try {
@@ -158,6 +203,18 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
       <label>Issue URL
         <input placeholder="https://github.com/owner/repo/issues/42" value={form.issueUrl} onChange={set("issueUrl")} />
       </label>
+      {issueHint && (
+        <div
+          className={"banner " + (issueHint.ok
+            ? (issueHint.data.state === "closed" ? "error" : "warn")
+            : "warn")}
+          style={{ margin: 0 }}
+        >
+          {issueHint.ok
+            ? `GitHub: "${issueHint.data.title}" — issue ${issueHint.data.state}.`
+            : `GitHub check skipped: ${issueHint.reason}`}
+        </div>
+      )}
       <label>Repo (owner/repo)
         <input placeholder="owner/repo" value={form.repoFullName} onChange={set("repoFullName")} />
       </label>
@@ -185,13 +242,55 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
   );
 }
 
-function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
+function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, highlighted }) {
   const meta = STATUS_META[b.status] || STATUS_META.OPEN;
   const [prUrl, setPrUrl] = useState("");
   const [claimError, setClaimError] = useState("");
+  const [prMeta, setPrMeta] = useState(null); // Phase 3 GH enrichment
+  const [maintName, setMaintName] = useState(null);
+  const [contribName, setContribName] = useState(null);
+  const [shareMsg, setShareMsg] = useState("");
   const isMaintainer = addressEquals(me, b.maintainer);
   const hasContributor = !isZeroAddr(b.contributor);
   const judging = busy?.id === b.bounty_id && busy?.action === "resolve";
+  const cardRef = React.useRef(null);
+
+  // Phase 3: fetch PR metadata for cards that have a claim.
+  useEffect(() => {
+    let cancelled = false;
+    if (!b.pr_url) { setPrMeta(null); return; }
+    (async () => {
+      const r = await fetchPrMeta(b.pr_url);
+      if (!cancelled) setPrMeta(r.ok ? r.data : null);
+    })();
+    return () => { cancelled = true; };
+  }, [b.pr_url]);
+
+  // Phase 3: reverse-resolve ENS for maintainer + contributor.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const n = await resolveEns(b.maintainer);
+      if (!cancelled) setMaintName(n);
+    })();
+    return () => { cancelled = true; };
+  }, [b.maintainer]);
+  useEffect(() => {
+    if (!hasContributor) { setContribName(null); return; }
+    let cancelled = false;
+    (async () => {
+      const n = await resolveEns(b.contributor);
+      if (!cancelled) setContribName(n);
+    })();
+    return () => { cancelled = true; };
+  }, [b.contributor, hasContributor]);
+
+  // Phase 3: deep-link highlight — scroll into view + flash a border.
+  useEffect(() => {
+    if (highlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlighted]);
 
   async function run(action, fn) {
     setError("");
@@ -205,11 +304,38 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
     setClaimError("");
     const check = validatePrUrl(prUrl.trim());
     if (!check.ok) { setClaimError(check.reason); return; }
+    if (prMeta && prMeta.state === "closed" && !prMeta.merged) {
+      setClaimError("GitHub says this PR is closed without merge. Pick another PR.");
+      return;
+    }
     return run("claim", () => claimBounty({ id: b.bounty_id, prUrl: prUrl.trim() }));
   }
 
+  async function onShare() {
+    const r = await shareBounty(b);
+    if (r.ok) {
+      setShareMsg(r.method === "clipboard" ? "Link copied to clipboard." : "Shared.");
+    } else {
+      setShareMsg("Could not share — copy manually: " + bountyDeepLink(b.bounty_id));
+    }
+    setTimeout(() => setShareMsg(""), 3000);
+  }
+
+  const prBadge = prStateBadge(prMeta);
+  const maintLabel = maintName ? `${maintName} · ${short(b.maintainer)}` : short(b.maintainer);
+  const contribLabel = hasContributor
+    ? (contribName ? `${contribName} · ${short(b.contributor)}` : short(b.contributor))
+    : null;
+
   return (
-    <article className="card" style={{ "--rail": meta.rail }}>
+    <article
+      ref={cardRef}
+      className="card"
+      style={{
+        "--rail": meta.rail,
+        boxShadow: highlighted ? "0 0 0 2px var(--brand-3), 0 10px 30px rgba(44, 157, 246, 0.35)" : undefined,
+      }}
+    >
       <div className="rail" />
       <div className="card-body">
         <div className="card-top">
@@ -220,10 +346,17 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
         <div className="card-meta">
           <a href={b.issue_url} target="_blank" rel="noreferrer">{b.repo_full_name} · issue ↗</a>
           {b.pr_url && <a href={b.pr_url} target="_blank" rel="noreferrer">PR ↗</a>}
-          <span>maintainer {short(b.maintainer)}</span>
-          {hasContributor && (
-            <span>contributor {short(b.contributor)}</span>
+          {prBadge && (
+            <span
+              className={"verdict-tag v-" + (prBadge.tone === "accepted" ? "accept" :
+                prBadge.tone === "rejected" ? "reject" : prBadge.tone === "unres" ? "unresolvable" : "")}
+              style={{ padding: "2px 8px", fontSize: 11 }}
+            >
+              GitHub: {prBadge.label}
+            </span>
           )}
+          <span>maintainer {maintLabel}</span>
+          {contribLabel && <span>contributor {contribLabel}</span>}
           <span>min conf {b.min_confidence}%</span>
         </div>
 
@@ -288,7 +421,18 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect }) {
               {busy?.id === b.bounty_id && busy?.action === "refund" ? "Refunding…" : "Refund"}
             </button>
           )}
+          <button
+            className="btn-ghost"
+            onClick={onShare}
+            title="Share this bounty (Web Share API or clipboard)"
+          >
+            Share ↗
+          </button>
         </div>
+
+        {shareMsg && (
+          <div className="hint" style={{ marginTop: 8 }}>{shareMsg}</div>
+        )}
 
         {judging && (
           <div className="consensus">

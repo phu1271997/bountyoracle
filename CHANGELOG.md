@@ -4,10 +4,56 @@ All notable changes to BountyOracle land here. The project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Unreleased work targets `v0.3.0` (Phase 2 — Contract-side AI
-enhancement bundle: canary defense, multi-source cross-reference,
-multi-perspective prompt, stricter validator). Redeploy of the
-Intelligent Contract is required to ship it.
+Unreleased work targets `v0.4.0` (Phase 3 — Integrations).
+
+---
+
+## [0.3.0] — 2026-08-30 · Phase 2 — Contract-side AI Enhancement
+
+**Milestone type:** AI enhancement (Loại 1b + 1c + 1d + 1e).
+**Deploy state:** contract **redeployed** at a new studionet address;
+frontend `VITE_CONTRACT_ADDRESS` updated and Vercel prod rebuilt;
+demo bounties reseeded on the new address.
+
+### Added
+- Prompt-injection canary defense. The prompt embeds
+  `CANARY-<12hex>` derived from `sha256(issue_url + "|" + pr_url)` and
+  requires the LLM to echo the exact token in its rationale. A missing
+  canary is coerced to `UNRESOLVABLE` by `_normalize_verdict`.
+- Multi-source cross-reference: six pages read per resolve — issue,
+  PR, `/files`, `/checks`, `/commits`, and the repo root — up from
+  four. See `_collect_sources`.
+- Multi-perspective prompt: the LLM is asked to score Correctness,
+  Tests, and CI as separate axes before folding into a single verdict.
+- Stricter validator: consensus now requires (a) verdict equality,
+  (b) canary preserved on both leader and validator, and (c)
+  confidences within `CONFIDENCE_TOLERANCE` (±20) of each other.
+- `Bounty.canary_verified: bool` persisted on every resolve so the
+  UI and the Explorer trail record whether the injection defense
+  fired for that specific run.
+- `tests/test_ai_hardening.py` — 13 new fast-lane invariants
+  covering the canary helper, prompt template, multi-source
+  collector, validator strictness, `canary_verified` field, and
+  regressions against the earlier hardening.
+
+### Changed
+- `SECURITY.md § T1` rewritten. The old "Planned (Phase 2)" section
+  is gone — the mitigations listed are what actually ships in v0.3.
+- Prompt now explicitly labels evidence blocks as UNTRUSTED user
+  input and forbids the LLM from following instructions found
+  inside them.
+
+### Security
+- Threat T1 (prompt injection through GitHub bodies) moves from
+  "partial" to "closed with caveats"; the caveats are documented in
+  SECURITY.md.
+
+### Notes for reviewers
+- Phase 2 required a contract redeploy. The old address
+  `0x1455872eeF0F96b71Fa8a763866B51A6013751c0` is left in place on
+  studionet but is no longer wired to the app. The new address is in
+  the CHANGELOG entry once deploy lands (see the Phase 2 milestone
+  draft in `deliverables/MILESTONE_PHASE2.md`).
 
 ---
 

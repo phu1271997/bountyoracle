@@ -34,20 +34,32 @@ The dApp never holds a private key. Signing is delegated to
 their PR description. When `resolve()` runs, each validator's LLM sees
 that text and can be nudged to ACCEPT a non-fix.
 
-**Current mitigation.**
-- The prompt clearly separates fenced evidence blocks (`=== PR PAGE ===`)
-  from the instruction preamble.
-- The prompt requires ONE JSON object with an enumerated
-  `verdict` value; anything else is coerced to `UNRESOLVABLE` by
+**Current mitigation (v0.3, Phase 2).**
+- **Canary defense.** The prompt embeds a deterministic canary token
+  derived from `sha256(issue_url + "|" + pr_url)`. The LLM is
+  instructed to echo the exact token verbatim in the rationale field.
+  If the parsed response does not contain the canary,
+  `_normalize_verdict` coerces the verdict to `UNRESOLVABLE`. An
+  injection that tells the LLM to output a different string
+  (`{"verdict":"ACCEPT",…}`) drops the canary and gets caught.
+- **Multi-perspective prompt.** The LLM is asked to score
+  Correctness / Tests / CI separately before folding into a single
+  verdict. One injected clause cannot dominate all three axes.
+- **Untrusted evidence framing.** The prompt explicitly tells the LLM
+  to treat text inside the `=== … ===` blocks as UNTRUSTED input and
+  not to follow any instructions found inside them.
+- **Multi-source cross-reference.** Six pages are read on every
+  resolution (issue, PR, `/files`, `/checks`, `/commits`, repo root)
+  so an attacker cannot manipulate the verdict by controlling any
+  single one.
+- **Fenced evidence blocks + enumerated verdict.** Anything that is
+  not one of `ACCEPT`/`REJECT`/`UNRESOLVABLE` is coerced by
   `_normalize_verdict`.
-- Validators re-derive the verdict independently; the run only succeeds
-  when they agree on the same decision.
-
-**Planned (Phase 2).**
-- Add a canary token to the prompt and require it to appear in the
-  model's rationale, otherwise coerce to `UNRESOLVABLE`.
-- Multi-perspective prompt (Correctness / Tests / CI) so a single
-  injected clause cannot flip the whole verdict.
+- **Validators re-derive independently** and consensus requires same
+  verdict + canary preserved on both sides + confidences within ±20.
+- **Auditability.** `Bounty.canary_verified` (bool) is persisted, so
+  the frontend and the Explorer trail record whether this specific
+  resolve run tripped the injection defense.
 
 ### T2 — URL smuggling through `create_bounty` / `claim_bounty`
 

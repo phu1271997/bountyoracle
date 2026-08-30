@@ -9,7 +9,7 @@ completely solves the issue. No maintainer has to manually adjudicate. No
 single party decides alone.
 
 - **Live app:** https://bountyoracle.vercel.app
-- **Contract (studionet, Preview):** [`0x1455872eeF0F96b71Fa8a763866B51A6013751c0`](https://explorer-studio.genlayer.com/address/0x1455872eeF0F96b71Fa8a763866B51A6013751c0)
+- **Contract (studionet, Preview):** [`0xE86573cbFf9c1cF08A175D616a183BFf8eba7aC6`](https://explorer-studio.genlayer.com/address/0xE86573cbFf9c1cF08A175D616a183BFf8eba7aC6)
 - **Wallet model:** MetaMask signs. No private key ships in the browser bundle.
 
 > **Why this dies without GenLayer:** the entire product is an on-chain agent

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // scripts/deploy.js
-// Optional CLI deploy for BountyOracle (alternative to the Studio UI flow).
+// Optional CLI deploy for BountyOracle (alternative to Studio UI flow).
 // The recommended path is the Studio UI (see README). This script is here so
 // the repo has a reproducible, scriptable deploy for engineering credit.
 //

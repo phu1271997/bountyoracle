@@ -1,10 +1,15 @@
 """
 test_ai_hardening.py — FAST lane.
 
-Static invariants for the Phase 2 AI hardening. These read the on-disk
+Static invariants for the on-chain AI judgement. These read the on-disk
 contract source only — no network, no deploy — and fail loudly if a
-future edit weakens the injection defense, drops a source, or loosens
+future edit weakens the injection defense, drops evidence, or loosens
 consensus.
+
+The Phase 2 hardening (canary defense, multi-source reads, stricter
+validator, auditable `canary_verified`) is carried forward here into the
+Phase 3 COMPARATIVE judgement: resolve() now ranks several rival PRs and
+picks one winner, so consensus also has to agree on `winner_index`.
 """
 from pathlib import Path
 import re
@@ -17,21 +22,20 @@ def _read() -> str:
     return CONTRACT.read_text(encoding="utf-8")
 
 
-# ── Canary defense ─────────────────────────────────────────────────
+# ── Canary defense (carried from Phase 2) ──────────────────────────
 def test_canary_helper_is_deterministic():
-    """Canary must derive from URLs (deterministic across validators)."""
+    """Canary must derive from the issue + rival PR URLs (deterministic
+    across validators)."""
     body = _read()
-    assert re.search(r"def _canary_for\(issue_url: str, pr_url: str\)", body), (
-        "_canary_for(issue_url, pr_url) must exist"
+    assert re.search(r"def _canary_for\(issue_url: str, candidates: list\)", body), (
+        "_canary_for(issue_url, candidates) must exist"
     )
-    assert 'return "CANARY-" + digest' in body or 'return "CANARY-"' in body
-    assert 'hashlib.sha256(seed)' in body, "canary must use a cryptographic hash"
+    assert 'return "CANARY-" + digest' in body
+    assert 'hashlib.sha256(' in body, "canary must use a cryptographic hash"
 
 
 def test_prompt_embeds_the_canary_and_labels_evidence_untrusted():
     body = _read()
-    # The prompt must reference the canary at least twice: once to require
-    # echoing, once inside the JSON template.
     assert body.count('CANARY: {canary}') >= 1
     assert body.count('{canary}') >= 3, "canary should appear multiple times in prompt"
     assert 'UNTRUSTED user' in body or 'untrusted' in body.lower(), (
@@ -45,43 +49,49 @@ def test_canary_ok_helper_and_stripper_present():
     assert "def _strip_canary(" in body
 
 
-def test_normalize_verdict_coerces_missing_canary_to_unresolvable():
+def test_normalize_coerces_missing_canary_to_unresolvable():
     body = _read()
     assert re.search(
         r"if canary and canary not in rationale:\s*\n\s*return _verdict_payload\(\s*\n?\s*[\"']UNRESOLVABLE[\"']",
         body,
-    ), "_normalize_verdict must coerce to UNRESOLVABLE when the canary is absent"
+    ), "_normalize_ranking must coerce to UNRESOLVABLE when the canary is absent"
 
 
-# ── Multi-source expansion ─────────────────────────────────────────
-def test_collect_sources_reads_six_pages():
+# ── Comparative multi-PR reads ─────────────────────────────────────
+def test_reads_issue_repo_and_every_rival_pr():
     body = _read()
-    assert "def _collect_sources(" in body
-    # 6 pages: issue, pr, files, checks, commits, repo
-    for key in ("issue", "pr", "files", "checks", "commits", "repo"):
-        assert re.search(rf'"{key}":\s*_safe_render', body), (
-            f'_collect_sources must call _safe_render for `{key}`'
-        )
+    assert "def _collect_pr_blocks(" in body, (
+        "resolve must gather every rival PR via _collect_pr_blocks"
+    )
+    # Each candidate contributes its PR page + its /files diff.
+    assert re.search(r'"pr":\s*_safe_render\(pr_url\)', body)
+    assert re.search(r'"files":\s*_safe_render\(pr_url \+ "/files"\)', body)
+    # The issue page is read directly in both leader and validator.
+    assert "_safe_render(issue_url)" in body
 
 
-def test_resolve_uses_the_multi_source_collector():
+def test_leader_and_validator_share_the_same_ranking_prompt():
     body = _read()
-    assert "_collect_sources(issue_url, pr_url, repo_url)" in body, (
-        "resolve() must use _collect_sources so leader + validator read the same six pages"
+    assert body.count("_build_ranking_prompt(") >= 2, (
+        "leader + validator must both build the same ranking prompt"
     )
 
 
-# ── Stricter validator (verdict + confidence + canary) ─────────────
-def test_validator_checks_verdict_confidence_and_canary():
+# ── Stricter validator: verdict + winner + confidence + canary ─────
+def test_validator_checks_verdict_winner_confidence_and_canary():
     body = _read()
-    # Look at the validator_fn body specifically.
-    m = re.search(r"def validator_fn\(leader_res:[^)]*\)\s*->\s*bool:\s*(.+?)result\s*=\s*gl\.vm\.run_nondet",
-                  body, re.DOTALL)
+    m = re.search(
+        r"def validator_fn\(leader_res:[^)]*\)\s*->\s*bool:\s*(.+?)result\s*=\s*gl\.vm\.run_nondet",
+        body, re.DOTALL,
+    )
     assert m, "could not locate validator_fn body"
     vf = m.group(1)
     assert '_canary_ok(leader_data, canary)' in vf, "validator must check leader canary"
     assert '_canary_ok(own, canary)' in vf, "validator must check its own canary"
     assert 'own.get("verdict", "") != leader_verdict' in vf, "validator must compare verdicts"
+    assert 'winner_index' in vf, (
+        "validator must require the two nodes to pick the SAME winning PR"
+    )
     assert 'abs(lc - oc) > CONFIDENCE_TOLERANCE' in vf, (
         "validator must reject confidences that diverge by more than CONFIDENCE_TOLERANCE"
     )
@@ -95,36 +105,50 @@ def test_confidence_tolerance_is_bounded_and_documented():
     assert 0 < n <= 30, f"CONFIDENCE_TOLERANCE should be a small positive number, got {n}"
 
 
-# ── Multi-perspective prompt ───────────────────────────────────────
-def test_prompt_declares_three_perspectives():
+# ── Comparative rubric ─────────────────────────────────────────────
+def test_prompt_declares_the_comparative_rubric():
     body = _read()
-    for label in ("Correctness", "Tests", "CI"):
-        assert label in body, f'prompt must call out the "{label}" perspective'
+    for label in ("Correctness", "Completeness", "Tests", "CI"):
+        assert label in body, f'ranking prompt must call out the "{label}" axis'
+    assert "winner_index" in body, "prompt must ask for a single winner_index"
+    assert re.search(r"REJECT.*winner_index -1", body, re.DOTALL) or \
+        "winner_index -1 if NO candidate" in body, (
+        "prompt must define winner_index -1 as the 'no PR is good enough' outcome"
+    )
 
 
-# ── Bounty gains an auditable canary_verified flag ─────────────────
+# ── ACCEPT with an out-of-range winner is refused ──────────────────
+def test_accept_with_bad_winner_index_is_refused():
+    body = _read()
+    assert re.search(
+        r'if verdict == "ACCEPT" and not \(0 <= winner_index < candidate_count\):',
+        body,
+    ), "an ACCEPT whose winner_index is out of range must be coerced to UNRESOLVABLE"
+
+
+# ── Auditability: canary_verified + per-PR rank/note ───────────────
 def test_bounty_has_canary_verified_field_and_view_exposes_it():
     body = _read()
     assert re.search(r"canary_verified:\s*bool", body), (
         "Bounty dataclass must have `canary_verified: bool` field"
     )
-    # _bounty_to_dict must include it so the frontend can render it.
     m = re.search(r"def _bounty_to_dict\(b: Bounty\)\s*->\s*dict:\s*(.+?)\n\s*\}", body, re.DOTALL)
     assert m and '"canary_verified"' in m.group(1), (
         "_bounty_to_dict must expose canary_verified in the JSON view"
     )
 
 
-def test_apply_verdict_writes_canary_verified():
+def test_apply_ranking_writes_canary_verified_and_per_pr_rank():
     body = _read()
-    m = re.search(r"def _apply_verdict\([^)]+\)\s*->\s*None:\s*(.+?)def ", body, re.DOTALL)
-    assert m, "could not locate _apply_verdict body"
-    assert "b.canary_verified = canary_verified" in m.group(1)
+    m = re.search(r"def _apply_ranking\([^)]+\)\s*->\s*None:\s*(.+?)\n    def ", body, re.DOTALL)
+    assert m, "could not locate _apply_ranking body"
+    ar = m.group(1)
+    assert "b.canary_verified = canary_verified" in ar
+    assert "_annotate_submissions(" in ar, "each judged PR must get a rank + note"
 
 
 # ── Contract still keeps the existing hardening ────────────────────
 def test_still_no_bare_int_in_storage():
-    """Regression guard: the Phase 2 rewrite must not reintroduce bare int fields."""
     body = _read()
     match = re.search(
         r"class\s+Contract\s*\(\s*gl\.Contract\s*\)\s*:\n(?P<body>(?:[ \t]+.+\n)+)",
@@ -138,8 +162,6 @@ def test_still_no_bare_int_in_storage():
 
 def test_still_uses_run_nondet_wrapper():
     body = _read()
-    # Still wrapped, still unsafe on this Studio build (ADR 0001 explains
-    # why); the migration to run_nondet is one line when the SDK exposes it.
     assert "gl.vm.run_nondet_unsafe(leader_fn, validator_fn)" in body, (
         "resolve() must still wrap non-determinism in run_nondet_unsafe (see ADR 0001)"
     )

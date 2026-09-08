@@ -12,10 +12,22 @@ install_mocks() is the R17-compliant mock installer for the local
 simulator. `params` must be a bare dict — a list would be normalized to
 an int-indexed dict and register 0 mocks.
 """
+import hashlib
 import json
 import pytest
 
 from gltest import get_contract_factory, get_default_account, get_accounts  # noqa: F401
+
+
+def canary_for(issue_url, pr_urls):
+    """Mirror of the contract's `_canary_for` so mocked LLM output can echo
+    the exact canary a resolve() will demand (v0.4 competitive form:
+    issue_url + every rival PR URL, in submission order)."""
+    seed = issue_url
+    for u in pr_urls:
+        seed += "|" + u
+    digest = hashlib.sha256(seed.encode("utf-8", "ignore")).hexdigest()[:12]
+    return "CANARY-" + digest
 
 
 @pytest.fixture
@@ -54,16 +66,27 @@ def pytest_collection_modifyitems(config, items):
 def install_mocks(
     client, *,
     verdict="ACCEPT",
+    winner_index=0,
     confidence=92,
-    rationale="Mock: PR resolves the issue and CI is green.",
+    canary="",
+    rationale="Mock: the winning PR resolves the issue and CI is green.",
+    notes=None,
     issue_body="Mock issue: please fix the off-by-one bug in parser.",
     pr_body="Mock PR: fixes off-by-one, adds regression test. CI green.",
 ):
-    """Register LLM + web mocks. Call this before any resolve() tx."""
+    """Register LLM + web mocks. Call this before any resolve() tx.
+
+    v0.4 (competitive) LLM shape: verdict + winner_index + confidence +
+    rationale (must contain the canary) + per-candidate notes. Pass
+    `canary=canary_for(issue_url, [pr_url, ...])` so the mocked rationale
+    carries the token the contract will look for."""
+    full_rationale = rationale if not canary else (rationale + " " + canary)
     llm_response = json.dumps({
         "verdict": verdict,
+        "winner_index": winner_index,
         "confidence": confidence,
-        "rationale": rationale,
+        "rationale": full_rationale,
+        "notes": notes or {"0": "Mock note for candidate 0."},
     })
     client.provider.make_request(
         method="sim_installMocks",

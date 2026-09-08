@@ -19,6 +19,7 @@ import Stats from "./sections/Stats.jsx";
 import Problem from "./sections/Problem.jsx";
 import HowItWorks from "./sections/HowItWorks.jsx";
 import LiveVerdicts from "./sections/LiveVerdicts.jsx";
+import Leaderboard from "./sections/Leaderboard.jsx";
 import Signals from "./sections/Signals.jsx";
 import Architecture from "./sections/Architecture.jsx";
 import UseCases from "./sections/UseCases.jsx";
@@ -110,6 +111,7 @@ export default function App() {
           setError={setError}
         />
       ))}
+      {guard("Leaderboard", <Leaderboard me={me} onConnect={handleConnect} />)}
       {guard("Signals section", <Signals />)}
       {guard("Architecture section", <Architecture />)}
       {guard("Use cases section", <UseCases />)}

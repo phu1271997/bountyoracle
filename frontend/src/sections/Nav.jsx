@@ -4,6 +4,7 @@ const LINKS = [
   ["problem", "Problem"],
   ["how", "How it works"],
   ["verdicts", "Live verdicts"],
+  ["leaderboard", "Leaderboard"],
   ["signals", "Why GenLayer"],
   ["architecture", "Architecture"],
   ["compare", "Compare"],

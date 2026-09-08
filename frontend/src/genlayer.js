@@ -164,6 +164,41 @@ export async function getReputation(addressHex) {
   });
 }
 
+// ── Phase 4: escrow economics reads ─────────────────────────────────────────
+export async function getWithdrawable(addressHex) {
+  const client = _readClient();
+  const v = await client.readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "get_withdrawable",
+    args: [addressHex],
+  });
+  return BigInt(v);
+}
+
+export async function getTreasury() {
+  const client = _readClient();
+  const v = await client.readContract({
+    address: CONTRACT_ADDRESS, functionName: "get_treasury", args: [],
+  });
+  return BigInt(v);
+}
+
+export async function getLeaderboard() {
+  const client = _readClient();
+  const res = await client.readContract({
+    address: CONTRACT_ADDRESS, functionName: "get_leaderboard", args: [],
+  });
+  return JSON.parse(res);
+}
+
+export async function getReputationFull(addressHex) {
+  const client = _readClient();
+  const res = await client.readContract({
+    address: CONTRACT_ADDRESS, functionName: "get_reputation_full", args: [addressHex],
+  });
+  return JSON.parse(res);
+}
+
 // ── Writes (wallet required) ────────────────────────────────────────────────
 function _requireSigning() {
   if (!_client || !_address) {
@@ -211,6 +246,18 @@ export async function refundBounty({ id }) {
     address: CONTRACT_ADDRESS,
     functionName: "refund",
     args: [id],
+    value: 0n,
+  });
+  return await client.waitForTransactionReceipt({ hash, status: "FINALIZED" });
+}
+
+// Phase 4: pull your credited GEN out of escrow.
+export async function withdraw() {
+  const client = _requireSigning();
+  const hash = await client.writeContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "withdraw",
+    args: [],
     value: 0n,
   });
   return await client.waitForTransactionReceipt({ hash, status: "FINALIZED" });

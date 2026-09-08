@@ -471,6 +471,46 @@ input:focus, textarea:focus { border-color: var(--brand-3); }
   border: 1px dashed var(--line); border-radius: var(--radius);
 }
 
+/* Phase 4 — reputation economy */
+.econ-cards {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  margin: 8px 0 24px;
+}
+@media (max-width: 760px) { .econ-cards { grid-template-columns: 1fr; } }
+.econ-card {
+  padding: 18px; border: 1px solid var(--line-2); border-radius: 12px;
+  background: var(--panel);
+}
+.econ-card .label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--muted-2); font-weight: 700;
+}
+.econ-card .value { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -0.02em; }
+.econ-card .sub { font-size: 12.5px; color: var(--muted); }
+
+.tier-badge {
+  display: inline-block; font-family: "JetBrains Mono", monospace;
+  font-weight: 700; font-size: 12px; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--line-2);
+}
+.tier-newcomer    { color: var(--muted); background: var(--panel-2); }
+.tier-contributor { color: var(--brand-4); background: rgba(44,157,246,0.12); border-color: var(--brand-4); }
+.tier-trusted     { color: var(--unres);  background: rgba(181,167,255,0.14); border-color: var(--unres); }
+.tier-expert      { color: #f5c451; background: rgba(245,196,81,0.14); border-color: #f5c451; }
+
+.lb-wrap { overflow-x: auto; border: 1px solid var(--line-2); border-radius: 12px; }
+.lb-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.lb-table th, .lb-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line-2); }
+.lb-table thead th {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--muted-2); font-weight: 700;
+}
+.lb-table tbody tr:last-child td { border-bottom: none; }
+.lb-rank { font-family: "JetBrains Mono", monospace; color: var(--muted); }
+.lb-who { font-weight: 600; }
+.lb-num { text-align: right; font-family: "JetBrains Mono", monospace; }
+th.lb-num { text-align: right; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

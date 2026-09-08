@@ -91,8 +91,9 @@ def test_only_winner_is_paid_and_reputation_credited():
     assert "self.submissions[_sub_key(bounty_id, winner_index)]" in ar, (
         "payout must resolve the winning Submission by winner_index"
     )
-    assert "emit_transfer(value=u256(amount))" in ar, "the winner must be paid the escrow"
-    assert "self.accepted_count[key] = bigint(current + 1)" in ar, (
+    # Phase 4: the winner is paid via the pull-payment ledger, not a push.
+    assert "self._credit(contributor, net)" in ar, "the winner must be credited the escrow (net of fee)"
+    assert "self.accepted_count[key] = bigint(wins_before + 1)" in ar, (
         "the winning contributor's reputation must increment"
     )
     assert "STATUS_REJECTED" in ar, "a no-good-PR outcome must land in REJECTED"

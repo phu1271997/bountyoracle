@@ -8,6 +8,34 @@ from dataclasses import dataclass
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# BountyOracle.py — v0.5 (Phase 4 — Escrow economics: pull payments,
+#                          protocol-fee treasury, tiered reputation, leaderboard)
+#
+# ─── What Phase 4 adds on top of v0.4 ──────────────────────────────────────────
+#
+#   1. PULL-PAYMENT ESCROW (security / architecture — Loại 5e).
+#      resolve()/refund() no longer PUSH GEN with emit_transfer inside the
+#      settlement path. Instead they CREDIT a withdrawable ledger, and the
+#      recipient pulls with withdraw(). This follows checks-effects-interactions
+#      and means a hostile or reverting recipient can never brick settlement
+#      for everyone else.
+#
+#   2. PROTOCOL FEE + TREASURY (economics).
+#      A small basis-point fee is taken from each winning payout and accrues to
+#      an on-chain treasury the owner can withdraw. The fee is DISCOUNTED by the
+#      winner's reputation tier — proven contributors keep more of the bounty.
+#
+#   3. TIERED REPUTATION (feature — Loại 3c).
+#      Every contributor accrues wins + lifetime GEN earned. Tiers
+#      (Newcomer -> Contributor -> Trusted -> Expert) are derived from wins and
+#      drive the fee discount. Exposed via get_reputation_full.
+#
+#   4. ON-CHAIN LEADERBOARD.
+#      A DynArray of known winners backs get_leaderboard(), which returns the
+#      ranked contributors (wins, earned, tier) as JSON for the UI.
+#
+# ═════════════════════════════════════════════════════════════════════════════
+#
 # BountyOracle.py — v0.4 (Phase 3 — Competitive Bounties)
 #
 # A trustless open-source bounty escrow. A maintainer locks GEN against a GitHub
@@ -59,6 +87,19 @@ CONFIDENCE_TOLERANCE = 20
 # submission order are judged.
 MAX_JUDGED = 5
 
+# Protocol fee taken from a winning payout, in basis points (250 = 2.5%).
+# Discounted by the winner's reputation tier — see _fee_bps_for_wins.
+BASE_FEE_BPS = 250
+
+# Reputation tiers, keyed by lifetime accepted wins (BEFORE the current win).
+# name, min_wins, fee_bps (the fee a winner at this tier actually pays).
+TIER_TABLE = [
+    ("Expert", 10, 0),      # 10+ wins  -> 0.0% fee
+    ("Trusted", 5, 100),    # 5-9 wins  -> 1.0% fee
+    ("Contributor", 2, 175),  # 2-4 wins -> 1.75% fee
+    ("Newcomer", 0, 250),   # 0-1 wins  -> 2.5% fee
+]
+
 
 @allow_storage
 @dataclass
@@ -102,10 +143,17 @@ class Contract(gl.Contract):
     # Rival submissions keyed by "<bounty_id>:<index>".
     submissions: TreeMap[str, Submission]
     accepted_count: TreeMap[str, bigint]
+    # Phase 4 — escrow economics.
+    earned: TreeMap[str, bigint]        # lifetime GEN (base units) won, net of fee
+    withdrawable: TreeMap[str, bigint]  # pull-payment ledger: addr -> claimable base
+    treasury: bigint                    # accrued protocol fees, owner-withdrawable
+    winners: DynArray[Address]          # distinct winners, backs the leaderboard
+    known_winner: TreeMap[str, bool]    # dedupe guard for `winners`
 
     def __init__(self):
         self.owner = gl.message.sender_address
         self.next_id = bigint(0)
+        self.treasury = bigint(0)
 
     # ─────────────────────────────────────────────────────────────────────────
     # WRITE: create + fund a bounty (payable)
@@ -329,7 +377,48 @@ class Contract(gl.Contract):
         amount = int(b.amount)
         recipient = b.maintainer
         self.bounties[str(bounty_id)] = b
-        gl.get_contract_at(recipient).emit_transfer(value=u256(amount))
+        # Pull-payment: credit the ledger, the maintainer withdraws later.
+        self._credit(recipient, amount)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # WRITE: pull your credited GEN out of the escrow (pull-payment pattern)
+    # ─────────────────────────────────────────────────────────────────────────
+    @gl.public.write
+    def withdraw(self) -> None:
+        key = _addr_str(gl.message.sender_address)
+        amount = int(self.withdrawable[key]) if key in self.withdrawable else 0
+        if amount <= 0:
+            raise Exception("BountyOracle: nothing to withdraw")
+        # Checks-effects-interactions: zero the balance BEFORE transferring.
+        self.withdrawable[key] = bigint(0)
+        gl.get_contract_at(gl.message.sender_address).emit_transfer(value=u256(amount))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # WRITE: owner sweeps the accrued protocol fees
+    # ─────────────────────────────────────────────────────────────────────────
+    @gl.public.write
+    def withdraw_treasury(self) -> None:
+        if gl.message.sender_address != self.owner:
+            raise Exception("BountyOracle: only the owner can withdraw the treasury")
+        amount = int(self.treasury)
+        if amount <= 0:
+            raise Exception("BountyOracle: treasury is empty")
+        self.treasury = bigint(0)
+        gl.get_contract_at(self.owner).emit_transfer(value=u256(amount))
+
+    # ── Internal: escrow ledger + leaderboard bookkeeping ────────────────────
+    def _credit(self, addr: Address, amount: int) -> None:
+        if amount <= 0:
+            return
+        key = _addr_str(addr)
+        current = int(self.withdrawable[key]) if key in self.withdrawable else 0
+        self.withdrawable[key] = bigint(current + amount)
+
+    def _track_winner(self, addr: Address, key: str) -> None:
+        if key in self.known_winner:
+            return
+        self.known_winner[key] = True
+        self.winners.append(addr)
 
     # ── Internal: apply the ranking + pay out the winner if accepted ─────────
     def _apply_ranking(
@@ -364,10 +453,23 @@ class Contract(gl.Contract):
             amount = int(b.amount)
             contributor = win.contributor
             key = _addr_str(contributor)
-            current = int(self.accepted_count[key]) if key in self.accepted_count else 0
-            self.accepted_count[key] = bigint(current + 1)
+            wins_before = int(self.accepted_count[key]) if key in self.accepted_count else 0
+
+            # Fee is discounted by the winner's tier at the time of the win.
+            fee_bps = _fee_bps_for_wins(wins_before)
+            fee = (amount * fee_bps) // 10000
+            net = amount - fee
+            self.treasury = bigint(int(self.treasury) + fee)
+
+            # Reputation: wins + lifetime earned (net of fee).
+            self.accepted_count[key] = bigint(wins_before + 1)
+            prev_earned = int(self.earned[key]) if key in self.earned else 0
+            self.earned[key] = bigint(prev_earned + net)
+            self._track_winner(contributor, key)
+
+            # Pull-payment: credit the ledger; the winner withdraws later.
+            self._credit(contributor, net)
             self.bounties[str(bounty_id)] = b
-            gl.get_contract_at(contributor).emit_transfer(value=u256(amount))
         elif verdict == "REJECT":
             # No PR was good enough. Keep the submissions on record; the
             # maintainer can refund. (No auto-reopen — the trail is preserved.)
@@ -450,6 +552,50 @@ class Contract(gl.Contract):
             return int(self.accepted_count[address_hex])
         return 0
 
+    @gl.public.view
+    def get_reputation_full(self, address_hex: str) -> str:
+        return json.dumps(self._reputation_dict(address_hex))
+
+    @gl.public.view
+    def get_withdrawable(self, address_hex: str) -> int:
+        if address_hex in self.withdrawable:
+            return int(self.withdrawable[address_hex])
+        return 0
+
+    @gl.public.view
+    def get_treasury(self) -> int:
+        return int(self.treasury)
+
+    @gl.public.view
+    def get_fee_bps(self) -> int:
+        return BASE_FEE_BPS
+
+    @gl.public.view
+    def get_leaderboard(self) -> str:
+        rows = []
+        i = 0
+        n = len(self.winners)
+        while i < n:
+            key = _addr_str(self.winners[i])
+            rows.append(self._reputation_dict(key))
+            i += 1
+        # Rank by wins, then by lifetime earned (both descending).
+        rows.sort(key=lambda r: (r["accepted"], int(r["earned"])), reverse=True)
+        return json.dumps(rows)
+
+    def _reputation_dict(self, key: str) -> dict:
+        wins = int(self.accepted_count[key]) if key in self.accepted_count else 0
+        earned = int(self.earned[key]) if key in self.earned else 0
+        tier_name, tier_index = _tier_for_wins(wins)
+        return {
+            "address": key,
+            "accepted": wins,
+            "earned": str(earned),
+            "tier": tier_index,
+            "tier_name": tier_name,
+            "fee_bps": _fee_bps_for_wins(wins),
+        }
+
     def _submissions_list(self, bounty_id: int, count: int) -> list:
         subs = []
         i = 0
@@ -480,6 +626,28 @@ def _addr_str(addr: Address) -> str:
         return addr.as_hex
     except Exception:
         return str(addr)
+
+
+def _tier_for_wins(wins: int) -> tuple:
+    """Return (tier_name, tier_index) for a lifetime win count.
+    Index 0 = Newcomer … 3 = Expert (higher is better)."""
+    n = len(TIER_TABLE)
+    pos = 0
+    while pos < n:
+        name, min_wins, _bps = TIER_TABLE[pos]
+        if wins >= min_wins:
+            return (name, n - 1 - pos)
+        pos += 1
+    # Fallback (should never hit — the last row has min_wins 0).
+    return ("Newcomer", 0)
+
+
+def _fee_bps_for_wins(wins: int) -> int:
+    """The protocol fee (basis points) a winner with `wins` prior wins pays."""
+    for _name, min_wins, bps in TIER_TABLE:
+        if wins >= min_wins:
+            return bps
+    return BASE_FEE_BPS
 
 
 def _safe_render(url: str) -> typing.Optional[str]:

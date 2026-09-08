@@ -1,15 +1,16 @@
 # BountyOracle
 
 **Trustless open-source bounties that settle themselves.** A maintainer locks
-GEN against a GitHub issue. A contributor claims it with a pull request. Then
-an **Intelligent Contract on GenLayer reads the live GitHub pages on-chain**
-(the issue, the PR, the diff, the CI checks), **reasons about them with an
-LLM**, and **pays the contributor automatically** if the work genuinely and
-completely solves the issue. No maintainer has to manually adjudicate. No
-single party decides alone.
+GEN against a GitHub issue. Then **contributors compete** — each opens their
+own pull request against the same bounty. When the maintainer calls judgement,
+an **Intelligent Contract on GenLayer reads every rival PR live on-chain**
+(each PR page, its diff, plus the issue and repo), **compares them head-to-head
+with an LLM**, and **pays only the single PR it ranks best** — if that PR
+genuinely and completely solves the issue and clears the confidence bar. No
+maintainer has to manually adjudicate. No single party decides alone.
 
 - **Live app:** https://bountyoracle.vercel.app
-- **Contract (studionet, Preview):** [`0xE86573cbFf9c1cF08A175D616a183BFf8eba7aC6`](https://explorer-studio.genlayer.com/address/0xE86573cbFf9c1cF08A175D616a183BFf8eba7aC6)
+- **Contract (studionet, v0.4 — Competitive):** [`0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4`](https://explorer-studio.genlayer.com/address/0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4)
 - **Wallet model:** MetaMask signs. No private key ships in the browser bundle.
 
 > **Why this dies without GenLayer:** the entire product is an on-chain agent
@@ -24,33 +25,33 @@ single party decides alone.
 ## How it works
 
 ```
-maintainer                contributor                 anyone
-   │ create_bounty(issue, $)   │                          │
-   ▼                           │                          │
- [OPEN] ──────────────────────►│ claim_bounty(pr_url)     │
-                               ▼                          │
-                           [CLAIMED] ─────────────────────►│ resolve()
-                               │                          │
-                  ┌────────────┴───────────── on-chain ───┴───────────┐
-                  │  gl.nondet.web.render(issue, pr, /files, /checks)  │
-                  │  gl.nondet.exec_prompt( judge quality + CI )       │
-                  │  validators must AGREE on the same verdict         │
-                  └────────────┬──────────────────────────────────────┘
-            ACCEPT ◄───────────┼───────────► REJECT ──► back to [OPEN]
-              │                │
-        pay contributor   UNRESOLVABLE ──► maintainer refund
-          [ACCEPTED]            │
-                            [UNRESOLVABLE]
+maintainer              many contributors               maintainer
+   │ create_bounty(issue, $)   │                            │
+   ▼                           │ claim_bounty(pr_url)  ×N    │
+ [OPEN] ◄──────────────────────┤  (rival PRs accumulate)    │
+   │  submission_count: N       │                            │
+   └────────────────────────────────────────────────► resolve()
+                  ┌───────────────────── on-chain ─────────────────────┐
+                  │  gl.nondet.web.render(issue, repo, PR#0..#N /files) │
+                  │  gl.nondet.exec_prompt( RANK the rival PRs )        │
+                  │  validators must AGREE on verdict + winner_index    │
+                  └────────────┬───────────────────────────────────────┘
+        ACCEPT (winner_index k) │        REJECT (no PR good enough)
+              │                 │                 │
+     pay submission #k     UNRESOLVABLE ──► maintainer refund
+       [ACCEPTED]               │                 │
+                            [UNRESOLVABLE]     [REJECTED] ──► refund
 ```
 
 ### The part that matters: consensus checks *meaning*, not shape
 
 Our validator does **not** merely check "is this valid JSON with the right
-keys." Each validator **independently re-reads GitHub and re-judges**, then
-the run only succeeds if the validator reaches the **same decision**
-(`ACCEPT` / `REJECT` / `UNRESOLVABLE`) as the leader. Two validators
-returning different verdicts that both happen to be well-formed JSON would be
-a failure — we explicitly forbid that in `validator_fn`.
+keys." Each validator **independently re-reads every rival PR and re-ranks
+them**, then the run only succeeds if the validator reaches the **same
+decision** (`ACCEPT` / `REJECT` / `UNRESOLVABLE`) **and picks the same
+`winner_index`** as the leader, with confidence within ±20. Two validators
+that pick *different* winning PRs — even if both are well-formed JSON — is a
+consensus failure, and we explicitly forbid it in `validator_fn`.
 
 ### `gl.vm.run_nondet_unsafe` — deliberate fallback
 

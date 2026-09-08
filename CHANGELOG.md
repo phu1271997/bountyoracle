@@ -4,11 +4,60 @@ All notable changes to BountyOracle land here. The project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Unreleased work targets `v0.5.0` (Phase 4 — Real Traction).
+Unreleased work targets `v0.5.0` (Phase 4).
 
 ---
 
-## [0.4.0] — 2026-08-30 · Phase 3 — Integrations
+## [0.4.1] — 2026-09-08 · Phase 3 — Competitive Bounties
+
+**Milestone type:** major feature + AI enhancement (Loại 3e + Loại 1).
+**Deploy state:** **contract redeployed** to studionet, new address
+`0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4` (v0.4). This supersedes the
+frontend-only v0.4.0 integration bundle: Phase 3 is now a real on-chain
+feature, not a client-side add-on.
+
+### Added
+- **Competitive submissions.** A bounty no longer locks to the first
+  contributor. It stays `OPEN` and collects **rival PRs** from many
+  contributors, each stored as its own `Submission(contributor, pr_url,
+  rank, note)` in a `TreeMap[str, Submission]` keyed `"<bounty_id>:<index>"`.
+  `claim_bounty` appends a submission and rejects duplicate PR URLs or a
+  second entry from the same contributor.
+- **Comparative on-chain AI ranking.** `resolve()` reads the issue, the repo
+  README and **every rival PR** (page + `/files` diff) on-chain, then asks
+  the LLM to **rank them and name a single `winner_index`** — the one PR that
+  best and most completely resolves the issue, or `-1` for "none is good
+  enough". This is one comparative judgement over N candidates, not N
+  independent yes/no calls (`MAX_JUDGED` caps the field at 5).
+- **Winner consensus.** Validators must independently agree on the verdict,
+  the **same `winner_index`**, confidence (±20) and the canary. Two nodes
+  picking different winning PRs is a consensus failure.
+- **Per-PR audit trail.** Each judged `Submission` persists its `rank`
+  (1 = winner) and a one-line AI `note`. New `get_submissions` view; the
+  bounty JSON now embeds the full submissions list and `winner_index`.
+- **Frontend competition UI.** `LiveVerdicts` renders the rival-PR list with
+  live GitHub badges + ENS chips per contributor, crowns the winner, shows
+  the per-PR AI notes, gates "Run AI judgement" to the maintainer, and adds a
+  "PRs competing" stat.
+- **Tests.** New `tests/test_competitive.py` (13 fast-lane invariants);
+  `test_ai_hardening.py` ported to the comparative API and now also asserts
+  `winner_index` consensus; slow happy/edge suites rewritten for the
+  competition (two contributors, one paid winner).
+
+### Changed
+- `resolve()` is now **maintainer-triggered** (a contributor can no longer
+  force an early judgement before rivals arrive).
+- A `REJECT` verdict now lands in a terminal `REJECTED` state that **keeps the
+  submission trail** (and is refundable), instead of silently reopening.
+
+### Security
+- Carried forward without regression: the prompt-injection **canary** defense,
+  multi-source reads, and the untrusted-evidence framing — now applied across
+  every rival PR block.
+
+---
+
+## [0.4.0] — 2026-08-30 · Phase 3 (superseded) — Integrations
 
 **Milestone type:** integrations (Loại 4).
 **Deploy state:** frontend redeployed; **contract unchanged** from v0.3

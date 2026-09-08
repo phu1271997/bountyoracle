@@ -10,7 +10,8 @@ genuinely and completely solves the issue and clears the confidence bar. No
 maintainer has to manually adjudicate. No single party decides alone.
 
 - **Live app:** https://bountyoracle.vercel.app
-- **Contract (studionet, v0.4 — Competitive):** [`0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4`](https://explorer-studio.genlayer.com/address/0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4)
+- **Contract (studionet, v0.5 — Escrow economics):** [`0xb15DCff4869C7D49be9aEaFFc9C21157e4a0184F`](https://explorer-studio.genlayer.com/address/0xb15DCff4869C7D49be9aEaFFc9C21157e4a0184F)
+- **Previous (v0.4 — Competitive):** [`0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4`](https://explorer-studio.genlayer.com/address/0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4)
 - **Wallet model:** MetaMask signs. No private key ships in the browser bundle.
 
 > **Why this dies without GenLayer:** the entire product is an on-chain agent

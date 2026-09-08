@@ -4,7 +4,40 @@ All notable changes to BountyOracle land here. The project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Unreleased work targets `v0.5.0` (Phase 4).
+## [0.5.0] — 2026-09-08 · Phase 4 — Escrow Economics
+
+**Milestone type:** security/architecture + major feature (Loại 5e + Loại 3c).
+**Deploy state:** **contract redeployed** to studionet, new address
+`0xb15DCff4869C7D49be9aEaFFc9C21157e4a0184F` (v0.5).
+
+### Added
+- **Pull-payment escrow.** `resolve()` and `refund()` no longer PUSH GEN with
+  `emit_transfer` inside settlement. They credit a `withdrawable`
+  ledger; recipients pull with a new `withdraw()` (checks-effects-interactions:
+  the balance is zeroed before the transfer). A reverting or hostile recipient
+  can no longer brick settlement for anyone else.
+- **Protocol fee + treasury.** Each winning payout takes a basis-point fee
+  (`BASE_FEE_BPS = 250`, i.e. 2.5%) into an on-chain `treasury` the owner
+  sweeps with `withdraw_treasury()` (owner-only).
+- **Tiered reputation.** Contributors accrue wins + lifetime GEN `earned`.
+  Tiers Newcomer → Contributor → Trusted → Expert are derived from wins and
+  set the fee a winner actually pays — **Expert pays 0%**, so proven builders
+  keep the whole bounty. Exposed via `get_reputation_full`.
+- **On-chain leaderboard.** A `DynArray[Address]` of distinct winners backs
+  `get_leaderboard()`, returning the ranked contributors (wins, earned, tier,
+  fee) as JSON.
+- **New views:** `get_withdrawable`, `get_treasury`, `get_fee_bps`,
+  `get_reputation_full`, `get_leaderboard`.
+- **Frontend.** A new **Reputation economy** section: treasury card, a
+  personal "claimable escrow" card with a **Withdraw** button, a "your tier"
+  card, and the ranked leaderboard with tier badges. Nav gains a Leaderboard
+  link.
+- **Tests.** New `tests/test_economy.py` (11 fast-lane invariants covering the
+  ledger, CEI ordering, the tiered fee discount, treasury and leaderboard) plus
+  a slow end-to-end test (fee math + withdraw + leaderboard).
+
+### Changed
+- The winning payout is now **net of the tiered fee** and credited, not pushed.
 
 ---
 

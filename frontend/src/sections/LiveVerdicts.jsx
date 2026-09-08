@@ -12,16 +12,18 @@ import {
 import { resolveEns, formatWithEns } from "../lib/ens.js";
 import { shareBounty, bountyDeepLink, readDeepLinkId } from "../lib/share.js";
 
+// Phase 3 — competitive model. A bounty stays OPEN and collects rival PRs
+// from many contributors; the maintainer runs one comparative AI judgement
+// that ranks them and pays only the single winner.
 const STATUS_META = {
-  OPEN:         { rail: "var(--open)",      label: "Open",              tone: "open" },
-  CLAIMED:      { rail: "var(--claimed)",   label: "Awaiting judgement", tone: "claimed" },
-  ACCEPTED:     { rail: "var(--accepted)",  label: "Paid out",           tone: "accepted" },
-  REJECTED:     { rail: "var(--rejected)",  label: "Rejected",           tone: "rejected" },
-  UNRESOLVABLE: { rail: "var(--unres)",     label: "Unresolvable",       tone: "unres" },
-  REFUNDED:     { rail: "var(--refunded)",  label: "Refunded",           tone: "refunded" },
+  OPEN:         { rail: "var(--open)",      label: "Open · accepting PRs", tone: "open" },
+  ACCEPTED:     { rail: "var(--accepted)",  label: "Winner paid",          tone: "accepted" },
+  REJECTED:     { rail: "var(--rejected)",  label: "No PR qualified",      tone: "rejected" },
+  UNRESOLVABLE: { rail: "var(--unres)",     label: "Unresolvable",         tone: "unres" },
+  REFUNDED:     { rail: "var(--refunded)",  label: "Refunded",             tone: "refunded" },
 };
 
-const FILTERS = ["ALL", "OPEN", "CLAIMED", "ACCEPTED", "REJECTED", "UNRESOLVABLE", "REFUNDED"];
+const FILTERS = ["ALL", "OPEN", "ACCEPTED", "REJECTED", "UNRESOLVABLE", "REFUNDED"];
 
 const short = shortAddr;
 
@@ -43,12 +45,13 @@ export default function LiveVerdicts({
   const [showForm, setShowForm] = useState(false);
   // Phase 3: deep link — read ?bounty=N once, on mount.
   const [highlightId] = useState(() => readDeepLinkId());
-  // Also warm the ENS cache for maintainers/contributors before their
-  // cards render, so the chips fill in on the first paint after data.
+  // Warm the ENS cache for maintainers/contributors before their cards
+  // render, so the chips fill in on the first paint after data.
   useEffect(() => {
     for (const b of bounties) {
       resolveEns(b.maintainer);
       if (b.contributor && !isZeroAddr(b.contributor)) resolveEns(b.contributor);
+      for (const s of (b.submissions || [])) resolveEns(s.contributor);
     }
   }, [bounties]);
 
@@ -67,8 +70,9 @@ export default function LiveVerdicts({
         <div>
           <h2 style={{ marginBottom: 8 }}>Live verdicts, straight from the contract.</h2>
           <p className="lede" style={{ margin: 0 }}>
-            Every card below is real state on studionet. Every verdict was
-            produced by validator consensus, not by this app's server.
+            Every card below is real state on studionet. Contributors compete
+            with rival PRs; the winner is chosen by validator consensus, not by
+            this app's server.
           </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
@@ -234,10 +238,65 @@ function CreateForm({ onCreated, setBusy, busy, setError }) {
         {busy?.action === "create" ? "Signing + funding…" : "Fund bounty"}
       </button>
       <p className="hint">
-        The GEN sent with this transaction becomes the escrow. It only
-        releases to the contributor when the on-chain AI verdict is ACCEPT
-        with confidence ≥ your minimum.
+        The GEN sent with this transaction becomes the escrow. Any number of
+        contributors can then submit rival PRs. It releases to the single PR
+        the on-chain AI ranks best — if it clears your minimum confidence.
       </p>
+    </div>
+  );
+}
+
+// One row per rival PR: contributor (ENS), PR link, live GitHub badge, and —
+// once judged — the AI rank + note. The winner is crowned.
+function SubmissionRow({ s, me, isWinner, judged }) {
+  const [prMeta, setPrMeta] = useState(null);
+  const [name, setName] = useState(null);
+  const mine = addressEquals(me, s.contributor);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!s.pr_url) { setPrMeta(null); return; }
+    (async () => {
+      const r = await fetchPrMeta(s.pr_url);
+      if (!cancelled) setPrMeta(r.ok ? r.data : null);
+    })();
+    return () => { cancelled = true; };
+  }, [s.pr_url]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const n = await resolveEns(s.contributor);
+      if (!cancelled) setName(n);
+    })();
+    return () => { cancelled = true; };
+  }, [s.contributor]);
+
+  const badge = prStateBadge(prMeta);
+  const label = name ? `${name} · ${short(s.contributor)}` : short(s.contributor);
+
+  return (
+    <div className={"submission" + (isWinner ? " winner" : "")}>
+      <div className="submission-main">
+        <span className="submission-who">
+          {isWinner && <span title="Winner">👑 </span>}
+          {label}{mine && <span className="you-tag"> (you)</span>}
+        </span>
+        <a href={s.pr_url} target="_blank" rel="noreferrer">PR ↗</a>
+        {badge && (
+          <span
+            className={"verdict-tag v-" + (badge.tone === "accepted" ? "accept" :
+              badge.tone === "rejected" ? "reject" : badge.tone === "unres" ? "unresolvable" : "")}
+            style={{ padding: "2px 8px", fontSize: 11 }}
+          >
+            GitHub: {badge.label}
+          </span>
+        )}
+        {judged && s.rank > 0 && (
+          <span className="rank-tag">{isWinner ? "Ranked #1" : `Rank #${s.rank}`}</span>
+        )}
+      </div>
+      {judged && s.note && <p className="submission-note">{s.note}</p>}
     </div>
   );
 }
@@ -246,27 +305,28 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
   const meta = STATUS_META[b.status] || STATUS_META.OPEN;
   const [prUrl, setPrUrl] = useState("");
   const [claimError, setClaimError] = useState("");
-  const [prMeta, setPrMeta] = useState(null); // Phase 3 GH enrichment
+  const [prMeta, setPrMeta] = useState(null); // GH enrichment for the input URL
   const [maintName, setMaintName] = useState(null);
-  const [contribName, setContribName] = useState(null);
   const [shareMsg, setShareMsg] = useState("");
   const isMaintainer = addressEquals(me, b.maintainer);
   const hasContributor = !isZeroAddr(b.contributor);
+  const submissions = b.submissions || [];
+  const judged = ["ACCEPTED", "REJECTED"].includes(b.status);
   const judging = busy?.id === b.bounty_id && busy?.action === "resolve";
   const cardRef = React.useRef(null);
 
-  // Phase 3: fetch PR metadata for cards that have a claim.
+  // Validate the PR the user is about to submit against GitHub's live state.
   useEffect(() => {
     let cancelled = false;
-    if (!b.pr_url) { setPrMeta(null); return; }
-    (async () => {
-      const r = await fetchPrMeta(b.pr_url);
+    if (!prUrl || !validatePrUrl(prUrl.trim()).ok) { setPrMeta(null); return; }
+    const t = setTimeout(async () => {
+      const r = await fetchPrMeta(prUrl.trim());
       if (!cancelled) setPrMeta(r.ok ? r.data : null);
-    })();
-    return () => { cancelled = true; };
-  }, [b.pr_url]);
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [prUrl]);
 
-  // Phase 3: reverse-resolve ENS for maintainer + contributor.
+  // Reverse-resolve ENS for the maintainer.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -275,17 +335,8 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
     })();
     return () => { cancelled = true; };
   }, [b.maintainer]);
-  useEffect(() => {
-    if (!hasContributor) { setContribName(null); return; }
-    let cancelled = false;
-    (async () => {
-      const n = await resolveEns(b.contributor);
-      if (!cancelled) setContribName(n);
-    })();
-    return () => { cancelled = true; };
-  }, [b.contributor, hasContributor]);
 
-  // Phase 3: deep-link highlight — scroll into view + flash a border.
+  // Deep-link highlight — scroll into view + flash a border.
   useEffect(() => {
     if (highlighted && cardRef.current) {
       cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -308,7 +359,10 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
       setClaimError("GitHub says this PR is closed without merge. Pick another PR.");
       return;
     }
-    return run("claim", () => claimBounty({ id: b.bounty_id, prUrl: prUrl.trim() }));
+    return run("claim", async () => {
+      await claimBounty({ id: b.bounty_id, prUrl: prUrl.trim() });
+      setPrUrl("");
+    });
   }
 
   async function onShare() {
@@ -321,11 +375,8 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
     setTimeout(() => setShareMsg(""), 3000);
   }
 
-  const prBadge = prStateBadge(prMeta);
   const maintLabel = maintName ? `${maintName} · ${short(b.maintainer)}` : short(b.maintainer);
-  const contribLabel = hasContributor
-    ? (contribName ? `${contribName} · ${short(b.contributor)}` : short(b.contributor))
-    : null;
+  const canResolve = isMaintainer && b.status === "OPEN" && submissions.length > 0;
 
   return (
     <article
@@ -345,20 +396,27 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
         <h3>{b.title || "(untitled bounty)"}</h3>
         <div className="card-meta">
           <a href={b.issue_url} target="_blank" rel="noreferrer">{b.repo_full_name} · issue ↗</a>
-          {b.pr_url && <a href={b.pr_url} target="_blank" rel="noreferrer">PR ↗</a>}
-          {prBadge && (
-            <span
-              className={"verdict-tag v-" + (prBadge.tone === "accepted" ? "accept" :
-                prBadge.tone === "rejected" ? "reject" : prBadge.tone === "unres" ? "unresolvable" : "")}
-              style={{ padding: "2px 8px", fontSize: 11 }}
-            >
-              GitHub: {prBadge.label}
-            </span>
-          )}
           <span>maintainer {maintLabel}</span>
-          {contribLabel && <span>contributor {contribLabel}</span>}
           <span>min conf {b.min_confidence}%</span>
+          <span className="competitors">
+            {submissions.length} {submissions.length === 1 ? "PR" : "PRs"} competing
+          </span>
         </div>
+
+        {submissions.length > 0 && (
+          <div className="submissions">
+            <div className="submissions-head">Rival pull requests</div>
+            {submissions.map((s) => (
+              <SubmissionRow
+                key={s.index}
+                s={s}
+                me={me}
+                judged={judged}
+                isWinner={b.status === "ACCEPTED" && b.winner_index === s.index}
+              />
+            ))}
+          </div>
+        )}
 
         {b.verdict && (
           <div className="verdict">
@@ -366,6 +424,11 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
               <span className="verdict-label">AI verdict</span>
               <span className={"verdict-tag v-" + b.verdict.toLowerCase()}>{b.verdict}</span>
               {b.confidence > 0 && <span className="verdict-conf">{b.confidence}% confidence</span>}
+              {b.canary_verified && (
+                <span className="verdict-tag" title="Prompt-injection canary echoed by both validators" style={{ padding: "2px 8px", fontSize: 11 }}>
+                  🛡 canary ok
+                </span>
+              )}
             </div>
             {b.rationale && <p className="verdict-reason">{b.rationale}</p>}
           </div>
@@ -386,7 +449,7 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
                     disabled={busy || !prUrl}
                     onClick={submitClaim}
                   >
-                    {busy?.id === b.bounty_id && busy?.action === "claim" ? "Claiming…" : "Claim with PR"}
+                    {busy?.id === b.bounty_id && busy?.action === "claim" ? "Submitting…" : "Submit your PR"}
                   </button>
                 </div>
                 {claimError && (
@@ -396,21 +459,17 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
                 )}
               </div>
             ) : (
-              <button className="btn-ghost" onClick={onConnect}>Connect wallet to claim</button>
+              <button className="btn-ghost" onClick={onConnect}>Connect wallet to submit a PR</button>
             )
           )}
-          {b.status === "CLAIMED" && (
-            me ? (
-              <button
-                className="btn-primary"
-                disabled={busy}
-                onClick={() => run("resolve", () => resolveBounty({ id: b.bounty_id }))}
-              >
-                {judging ? "AI judging on-chain…" : "Run AI judgement"}
-              </button>
-            ) : (
-              <button className="btn-ghost" onClick={onConnect}>Connect wallet to run judgement</button>
-            )
+          {canResolve && (
+            <button
+              className="btn-primary"
+              disabled={busy}
+              onClick={() => run("resolve", () => resolveBounty({ id: b.bounty_id }))}
+            >
+              {judging ? "AI judging on-chain…" : `Run AI judgement (${submissions.length} PRs)`}
+            </button>
           )}
           {isMaintainer && ["OPEN", "UNRESOLVABLE", "REJECTED"].includes(b.status) && (
             <button
@@ -436,8 +495,9 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
 
         {judging && (
           <div className="consensus">
-            Reading GitHub on-chain and reaching validator consensus — this
-            takes 30–90 seconds while validators run LLM inference.
+            Reading every rival PR on GitHub on-chain and reaching validator
+            consensus on the winner — this takes 30–90 seconds while validators
+            run LLM inference.
           </div>
         )}
       </div>

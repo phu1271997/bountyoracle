@@ -16,13 +16,16 @@ export default function Stats({ bounties }) {
     try { return s + BigInt(b.amount); } catch { return s; }
   }, 0n);
   const accepted = bounties.filter((b) => b.status === "ACCEPTED").length;
-  const verdicts = bounties.filter((b) => b.verdict).length;
+  const competing = bounties.reduce(
+    (s, b) => s + (Number(b.submission_count) || (b.submissions ? b.submissions.length : 0)),
+    0,
+  );
 
   const cards = [
     { label: "Bounties", value: total, sub: "on-chain" },
     { label: "GEN escrowed", value: fmtGEN(totalGEN), sub: "across all bounties" },
-    { label: "AI verdicts", value: verdicts, sub: "produced by validators" },
-    { label: "Paid out", value: accepted, sub: "released to contributors" },
+    { label: "PRs competing", value: competing, sub: "rival submissions" },
+    { label: "Paid out", value: accepted, sub: "winners released" },
   ];
 
   return (

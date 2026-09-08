@@ -274,6 +274,42 @@ button:disabled { opacity: .55; cursor: progress; }
   font-size: 12.5px; color: var(--muted);
 }
 .card-meta a { color: var(--brand-4); }
+.card-meta .competitors { color: var(--brand-4); font-weight: 600; }
+
+/* Phase 3 — competitive rival PR list */
+.submissions {
+  margin: 14px 0 0; padding: 12px 14px;
+  background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px;
+  display: grid; gap: 10px;
+}
+.submissions-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--muted-2); font-weight: 700;
+}
+.submission {
+  padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 8px;
+  background: var(--panel);
+}
+.submission.winner {
+  border-color: var(--accepted);
+  box-shadow: 0 0 0 1px var(--accepted) inset;
+  background: rgba(52, 211, 153, 0.06);
+}
+.submission-main {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  font-size: 12.5px; color: var(--muted);
+}
+.submission-main a { color: var(--brand-4); }
+.submission-who { font-weight: 600; color: var(--ink); }
+.you-tag { color: var(--brand-4); font-weight: 600; }
+.rank-tag {
+  font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 6px;
+  color: var(--muted); background: var(--panel-2); border: 1px solid var(--line-2);
+}
+.submission.winner .rank-tag { color: var(--accepted); border-color: var(--accepted); }
+.submission-note { margin: 6px 0 0; font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+
 .verdict {
   margin: 14px 0 0; padding: 14px;
   background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 10px;

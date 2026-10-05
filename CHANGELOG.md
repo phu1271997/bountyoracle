@@ -4,6 +4,26 @@ All notable changes to BountyOracle land here. The project follows
 [Semantic Versioning](https://semver.org) and
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.0] — 2026-10-05 · Fix — admission capacity == judging capacity
+
+Studionet redeploy: `0x3F380B72e3F98b863EEf9de03Df6f75DA445f59b`
+(tx `0x76def54f4e5ea4c5d0878d43be0d778bd6dd65f201bf419eabeb1c755449c002`).
+
+### Fixed
+- **Accepted-entry vs judging-capacity mismatch.** `claim_bounty` accepted an
+  unbounded number of entries while `resolve` only ranks `MAX_JUDGED` (5), so a
+  6th admitted entrant could never be judged, could never win, and was never
+  settled against. `claim_bounty` now rejects an entry once `MAX_JUDGED` entries
+  are already admitted — admission capacity now equals judging capacity, so every
+  admitted entrant is guaranteed a judgement. New view `get_max_entries`.
+
+### Tests
+- `tests/test_entry_capacity.py`: fast source-level invariants plus slow
+  five-entry (all admitted → all judged, a late entrant wins) and six-entry (the
+  sixth admission reverts; the five admitted are judged) integration tests that
+  assert the winner, protocol fee, treasury and per-entrant withdrawable balances
+  of the pull-payment settlement for every admitted entrant.
+
 ## [0.5.0] — 2026-09-08 · Phase 4 — Escrow Economics
 
 **Milestone type:** security/architecture + major feature (Loại 5e + Loại 3c).

@@ -87,7 +87,7 @@ For OSS maintainers funding fixes without becoming sole judge, and contributors 
   GEN covers a full flow. **Do not use the testnet faucet** — testnet
   and studionet are different networks.
 
-**Step 1 — Open the app.** Go to https://bountyoracle.vercel.app.
+**Step 1 — Open the app.** Go to https://bountyoracle-phi.vercel.app.
 Reads work without a wallet; you should see live bounties immediately.
 
 **Step 2 — Connect MetaMask.** Click *Connect MetaMask* in the header.
@@ -142,7 +142,7 @@ Reviewer sees four seeded bounties on load. #3 is ACCEPTED and paid out; its ver
 | Contract address | `0x1455872eeF0F96b71Fa8a763866B51A6013751c0` |
 | Network | studionet (chain 61999) |
 | Status | **Preview** |
-| Website | https://bountyoracle.vercel.app |
+| Website | https://bountyoracle-phi.vercel.app |
 | GitHub | https://github.com/phu1271997/bountyoracle |
 | Community links (optional) | Leave blank |
 

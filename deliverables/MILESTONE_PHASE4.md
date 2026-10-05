@@ -60,7 +60,7 @@ Quantifiable: 5 new read views + 2 new write methods; fast-lane invariants
 | | |
 |---|---|
 | New contract (v0.5, studionet) | `0xb15DCff4869C7D49be9aEaFFc9C21157e4a0184F` |
-| Live app | https://bountyoracle.vercel.app |
+| Live app | https://bountyoracle-phi.vercel.app |
 
 ---
 

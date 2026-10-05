@@ -8,7 +8,7 @@
 export function bountyDeepLink(id) {
   const base = typeof window !== "undefined"
     ? `${window.location.origin}${window.location.pathname}`
-    : "https://bountyoracle.vercel.app/";
+    : "https://bountyoracle-phi.vercel.app/";
   return `${base}?bounty=${encodeURIComponent(id)}`;
 }
 

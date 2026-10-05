@@ -56,7 +56,7 @@ invariants 53 → 63.
 | | |
 |---|---|
 | New contract (v0.4, studionet) | `0x19552b11A53eca997152E35E56Ac04DaaaC2DcD4` |
-| Live app | https://bountyoracle.vercel.app |
+| Live app | https://bountyoracle-phi.vercel.app |
 
 ---
 

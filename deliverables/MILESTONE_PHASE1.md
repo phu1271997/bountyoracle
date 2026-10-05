@@ -73,7 +73,7 @@ transaction hashes.
 ## Deploy state
 
 - Live app (frontend rebuilt with Phase 1 code):
-  https://bountyoracle.vercel.app
+  https://bountyoracle-phi.vercel.app
   (production bundle `/assets/index-CeyfcMi3.js` served after commit
   `fc07f0f`.)
 - Contract (unchanged in Phase 1):

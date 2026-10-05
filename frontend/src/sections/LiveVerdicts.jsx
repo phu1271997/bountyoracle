@@ -351,8 +351,16 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
     finally { setBusy(null); }
   }
 
+  // Admission capacity == on-chain judging capacity (MAX_JUDGED). Once full,
+  // the contract rejects further entries so every admitted entry is judged.
+  const MAX_ENTRIES = 5;
+
   function submitClaim() {
     setClaimError("");
+    if (submissions.length >= MAX_ENTRIES) {
+      setClaimError(`Competition is full (${MAX_ENTRIES}/${MAX_ENTRIES} entries). No more PRs can be admitted.`);
+      return;
+    }
     const check = validatePrUrl(prUrl.trim());
     if (!check.ok) { setClaimError(check.reason); return; }
     if (prMeta && prMeta.state === "closed" && !prMeta.merged) {
@@ -443,13 +451,16 @@ function BountyCard({ b, me, busy, setBusy, setError, onChanged, onConnect, high
                     placeholder="https://github.com/owner/repo/pull/57"
                     value={prUrl}
                     onChange={(e) => { setPrUrl(e.target.value); setClaimError(""); }}
+                    disabled={submissions.length >= MAX_ENTRIES}
                   />
                   <button
                     className="btn-primary"
-                    disabled={busy || !prUrl}
+                    disabled={busy || !prUrl || submissions.length >= MAX_ENTRIES}
                     onClick={submitClaim}
                   >
-                    {busy?.id === b.bounty_id && busy?.action === "claim" ? "Submitting…" : "Submit your PR"}
+                    {submissions.length >= MAX_ENTRIES
+                      ? `Full (${MAX_ENTRIES}/${MAX_ENTRIES})`
+                      : busy?.id === b.bounty_id && busy?.action === "claim" ? "Submitting…" : "Submit your PR"}
                   </button>
                 </div>
                 {claimError && (

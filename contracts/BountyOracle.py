@@ -216,6 +216,17 @@ class Contract(gl.Contract):
 
         sender = gl.message.sender_address
         count = int(b.submission_count)
+        # Judging capacity == admission capacity. resolve() ranks at most
+        # MAX_JUDGED entries, so admitting more would leave later entrants
+        # accepted-but-never-judged (they could neither win nor be settled
+        # against). Cap admission at the judging capacity so every admitted
+        # entrant is guaranteed a judgement.
+        if count >= MAX_JUDGED:
+            raise Exception(
+                "BountyOracle: competition is full — the maximum of "
+                + str(MAX_JUDGED)
+                + " entries (the judging capacity) has been reached"
+            )
         # Reject a duplicate PR URL or a second entry from the same contributor.
         i = 0
         while i < count:
@@ -530,6 +541,12 @@ class Contract(gl.Contract):
     @gl.public.view
     def get_total(self) -> int:
         return int(self.next_id)
+
+    @gl.public.view
+    def get_max_entries(self) -> int:
+        """Admission == judging capacity. A bounty stops accepting entries once
+        this many have been admitted, so every admitted entrant is judged."""
+        return int(MAX_JUDGED)
 
     @gl.public.view
     def list_bounties(self) -> str:
